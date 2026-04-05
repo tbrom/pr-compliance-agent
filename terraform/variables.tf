@@ -9,3 +9,9 @@ variable "region" {
   type        = string
   default     = "us-central1"
 }
+
+variable "github_repository" {
+  description = "The repository path for GitHub Actions WIF (e.g., yourusername/sentinel-agent-core)"
+  type        = string
+  default     = "yourusername/sentinel-agent-core"
+}

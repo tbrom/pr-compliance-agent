@@ -1,0 +1,74 @@
+name: Deploy Sentinel-SDLC to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  GCP_PROJECT_ID: your-project-id
+  GCP_REGION: us-central1
+  # These WIF values will be resolved once you run Terraform apply
+  WIF_PROVIDER: projects/123456789/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider
+  WIF_SERVICE_ACCOUNT: github-actions-deployer@your-project-id.iam.gserviceaccount.com
+
+jobs:
+  deploy-orchestrator:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: '${{ env.WIF_PROVIDER }}'
+          service_account: '${{ env.WIF_SERVICE_ACCOUNT }}'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev
+
+      - name: Build and Push Orchestrator
+        run: |
+          IMAGE_NAME="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/sentinel-repo/orchestrator:${{ github.sha }}"
+          docker build -t $IMAGE_NAME ./orchestrator
+          docker push $IMAGE_NAME
+          gcloud run deploy sentinel-orchestrator --image $IMAGE_NAME --region ${{ env.GCP_REGION }} --platform managed
+
+  deploy-evaluator:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: '${{ env.WIF_PROVIDER }}'
+          service_account: '${{ env.WIF_SERVICE_ACCOUNT }}'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev
+
+      - name: Build and Push Evaluator
+        run: |
+          IMAGE_NAME="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/sentinel-repo/evaluator:${{ github.sha }}"
+          docker build -t $IMAGE_NAME ./evaluator
+          docker push $IMAGE_NAME
+          gcloud run deploy sentinel-evaluator --image $IMAGE_NAME --region ${{ env.GCP_REGION }} --platform managed
