@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
-from github import GithubIntegration, Github
+from github import GithubIntegration, Github, Auth
 
 from graph import build_sentinel_graph
 from telemetry import setup_telemetry
@@ -43,10 +43,8 @@ async def lifespan(app: FastAPI):
     if os.path.exists(GITHUB_PRIVATE_KEY_PATH):
         with open(GITHUB_PRIVATE_KEY_PATH, "r") as f:
             private_key = f.read()
-        github_integration = GithubIntegration(
-            integration_id=int(GITHUB_APP_ID),
-            private_key=private_key,
-        )
+        auth = Auth.AppAuth(app_id=int(GITHUB_APP_ID), private_key=private_key)
+        github_integration = GithubIntegration(auth=auth)
         logger.info("✅ GitHub App integration initialised (App ID: %s)", GITHUB_APP_ID)
     else:
         logger.warning("⚠️  Private key not found at %s – PR commenting disabled", GITHUB_PRIVATE_KEY_PATH)
@@ -88,8 +86,8 @@ def verify_webhook_signature(payload_body: bytes, signature_header: str | None) 
 
 def get_github_client(installation_id: int) -> Github:
     """Return an authenticated PyGithub client scoped to an installation."""
-    access_token = github_integration.get_access_token(installation_id)
-    return Github(login_or_token=access_token.token)
+    installation = github_integration.get_installations()[0]
+    return installation.get_github_for_installation()
 
 
 def post_pr_comment(gh: Github, repo_full_name: str, pr_number: int, body: str):
@@ -196,13 +194,15 @@ async def github_webhook(request: Request):
             return JSONResponse(status_code=500, content={"status": "error", "detail": str(e)})
 
         # 5. Post the result back to the PR as a comment
-        if github_integration and installation_id:
+        logger.info("📝 Comment path: integration=%s, installation_id=%s", 
+                    github_integration is not None, installation_id)
+        if github_integration:
             try:
                 gh = get_github_client(installation_id)
                 comment_body = format_report(final_state)
                 post_pr_comment(gh, repo_full_name, pr_number, comment_body)
             except Exception as e:
-                logger.error("❌ Failed to post PR comment: %s", str(e))
+                logger.error("❌ Failed to post PR comment: %s", str(e), exc_info=True)
 
         return JSONResponse(status_code=200, content={
             "status": "completed",
