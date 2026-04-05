@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+httpx
+PyGithub
+google-genai
+mcp
+pytest
+pytest-asyncio
