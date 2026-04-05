@@ -6,11 +6,11 @@ on:
       - main
 
 env:
-  GCP_PROJECT_ID: your-project-id
+  GCP_PROJECT_ID: sentinel-deployment-492418
   GCP_REGION: us-central1
   # These WIF values will be resolved once you run Terraform apply
-  WIF_PROVIDER: projects/123456789/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider
-  WIF_SERVICE_ACCOUNT: github-actions-deployer@your-project-id.iam.gserviceaccount.com
+  WIF_PROVIDER: projects/79064771175/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider
+  WIF_SERVICE_ACCOUNT: github-actions-deployer@sentinel-deployment-492418.iam.gserviceaccount.com
 
 jobs:
   deploy-orchestrator:

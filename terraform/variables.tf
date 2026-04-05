@@ -1,7 +1,7 @@
 variable "project_id" {
-  description = "The GCP Project ID"
+  description = "The ID of the GCP project"
   type        = string
-  default     = "example-mock-project"
+  default     = "sentinel-deployment-492418"
 }
 
 variable "region" {
@@ -13,5 +13,5 @@ variable "region" {
 variable "github_repository" {
   description = "The repository path for GitHub Actions WIF (e.g., yourusername/sentinel-agent-core)"
   type        = string
-  default     = "yourusername/sentinel-agent-core"
+  default     = "tbrom/pr-compliance-agent"
 }

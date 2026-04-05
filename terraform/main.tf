@@ -8,26 +8,40 @@ provider "google" {
 resource "google_cloud_run_v2_service" "orchestrator" {
   name     = "sentinel-orchestrator"
   location = var.region
+  deletion_protection = false
 
   template {
     containers {
-      image = "gcr.io/${var.project_id}/sentinel-orchestrator:latest"
+      image = "us-docker.pkg.dev/cloudrun/container/hello"
       env {
         name  = "ENVIRONMENT"
         value = "production"
       }
     }
   }
+
+  lifecycle {
+    ignore_changes = [
+      template[0].containers[0].image
+    ]
+  }
 }
 
 resource "google_cloud_run_v2_service" "evaluator" {
   name     = "sentinel-evaluator"
   location = var.region
+  deletion_protection = false
 
   template {
     containers {
-      image = "gcr.io/${var.project_id}/sentinel-evaluator:latest"
+      image = "us-docker.pkg.dev/cloudrun/container/hello"
     }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      template[0].containers[0].image
+    ]
   }
 }
 
@@ -73,6 +87,8 @@ resource "google_iam_workload_identity_pool_provider" "github_actions" {
     "attribute.actor"      = "assertion.actor"
     "attribute.repository" = "assertion.repository"
   }
+
+  attribute_condition = "assertion.repository == '${var.github_repository}'"
   
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
@@ -89,4 +105,12 @@ resource "google_service_account_iam_member" "workload_identity_user" {
   service_account_id = google_service_account.github_actions_deployer.name
   role               = "roles/iam.workloadIdentityUser"
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github_actions.name}/attribute.repository/${var.github_repository}"
+}
+
+# Artifact Registry for Docker images
+resource "google_artifact_registry_repository" "sentinel_repo" {
+  location      = var.region
+  repository_id = "sentinel-repo"
+  description   = "Docker repository for Sentinel-SDLC agents"
+  format        = "DOCKER"
 }
