@@ -3,7 +3,10 @@ import asyncio
 from mcp.server.stdio import stdio_server
 from mcp.server import Server
 from mcp.types import Tool, TextContent
-from standards import get_security_standard
+from knowledge_base import KnowledgeBase
+
+kb = KnowledgeBase()
+kb.load_rules_from_md("standards.md")
 
 server = Server("sentinel-standards-mcp")
 
@@ -23,6 +26,20 @@ async def handle_list_tools() -> list[Tool]:
                 },
                 "required": ["standard_name"]
             }
+        ),
+        Tool(
+            name="search_compliance_standards",
+            description="Perform a semantic search across all enterprise compliance standards to find rules relevant to a specific code diff.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "code_diff": {
+                        "type": "string",
+                        "description": "The content of the pull request code diff to match against standards."
+                    }
+                },
+                "required": ["code_diff"]
+            }
         )
     ]
 
@@ -30,8 +47,12 @@ async def handle_list_tools() -> list[Tool]:
 async def handle_call_tool(name: str, arguments: dict | None) -> list[TextContent]:
     if name == "get_security_standard":
         standard_name = (arguments or {}).get("standard_name", "")
-        result = get_security_standard(standard_name)
-        return [TextContent(type="text", text=result)]
+        result = kb.get_standard(standard_name or "")
+        return [TextContent(type="text", text=str(result))]
+    elif name == "search_compliance_standards":
+        code_diff = (arguments or {}).get("code_diff", "")
+        results = kb.search_rules(code_diff or "")
+        return [TextContent(type="text", text="\n".join(results))]
     raise ValueError(f"Unknown tool: {name}")
 
 async def main():

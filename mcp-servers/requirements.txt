@@ -1,3 +1,5 @@
 mcp
+chromadb
+sentence-transformers
 pytest
-pytest-asyncio
+pyyaml
