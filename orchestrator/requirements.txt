@@ -13,4 +13,3 @@ langchain-google-genai
 opentelemetry-api
 opentelemetry-sdk
 google-auth
-google-auth-httpx
