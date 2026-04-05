@@ -23,6 +23,9 @@ GITHUB_PRIVATE_KEY_PATH = os.getenv("GITHUB_PRIVATE_KEY_PATH", "private-key.pem"
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET")
 EVALUATOR_URL = os.getenv("EVALUATOR_URL")
 
+# Global history for Copilot Extension lookup
+SENTINEL_HISTORY = {} 
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("sentinel")
 
@@ -253,6 +256,13 @@ async def github_webhook(request: Request):
                     )
                     logger.info("✅ Updated Check Run ID: %s with conclusion: %s", check_run_id, conclusion)
 
+                # Store result in HISTORY for Copilot lookup
+                SENTINEL_HISTORY[f"{repo_full_name}#{pr_number}"] = {
+                    "decision": final_state.get("final_decision", "UNKNOWN"),
+                    "findings": final_state.get("analyst_findings", []),
+                    "signals": final_state.get("validator_signals", []),
+                }
+
             except Exception as e:
                 logger.error("❌ Failed to post result back to GitHub: %s", str(e), exc_info=True)
 
@@ -262,6 +272,47 @@ async def github_webhook(request: Request):
         })
 
     return JSONResponse(status_code=200, content={"status": "ignored", "event": event})
+
+
+# ---------------------------------------------------------------------------
+# GitHub Copilot Extension Endpoint
+# ---------------------------------------------------------------------------
+from agents.copilot_agent import handle_copilot_chat
+
+@app.post("/api/copilot")
+async def copilot_chat(request: Request):
+    """
+    Endpoint for GitHub Copilot Chat Extension.
+    """
+    # 1. Signature Verification (Simplified for Demo)
+    # real production would use gcloud / k8s secrets to store GH Public Key
+    signature = request.headers.get("x-github-public-key-signature")
+    if not signature:
+         logger.warning("⚠️ Received Copilot request without signature (ignoring for demo).")
+
+    try:
+        payload = await request.json()
+        messages = payload.get("messages", [])
+        last_message = messages[-1]["content"] if messages else "Hello"
+        
+        # 2. Identify the context (e.g., current PR from payload)
+        # GitHub sends repository and PR context in the request payload
+        repo_name = payload.get("repository", {}).get("full_name", "unknown")
+        # For simplicity, we'll try to find the last PR result for this repo
+        # In production, we'd lookup by specific PR ID from the payload
+        history_key = next((k for k in SENTINEL_HISTORY.keys() if k.startswith(repo_name)), None)
+        pr_context = SENTINEL_HISTORY.get(history_key, {"decision": "No recent scan found."})
+
+        # 3. Handle the chat logic
+        response_text = handle_copilot_chat(last_message, pr_context)
+
+        return JSONResponse(status_code=200, content={
+            "content": response_text,
+            "role": "assistant"
+        })
+    except Exception as e:
+        logger.error("❌ Copilot Chat Error: %s", str(e), exc_info=True)
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 if __name__ == "__main__":
