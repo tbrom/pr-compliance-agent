@@ -175,10 +175,28 @@ async def github_webhook(request: Request):
         repo_full_name = payload["repository"]["full_name"]
         installation_id = payload.get("installation", {}).get("id")
         diff_url = pr.get("diff_url", "")
+        head_sha = pr["head"]["sha"]
 
-        logger.info("🔍 Processing PR #%d on %s (action=%s)", pr_number, repo_full_name, action)
+        logger.info("🔍 Processing PR #%d on %s (head_sha=%s)", pr_number, repo_full_name, head_sha)
 
-        # 4. Run the multi-agent LangGraph pipeline
+        # 4. Create an initial in-progress Check Run
+        integration = request.app.state.github_integration
+        check_run_id = None
+        if integration and installation_id:
+            try:
+                gh = get_github_client(integration, installation_id)
+                repo = gh.get_repo(repo_full_name)
+                check_run = repo.create_check_run(
+                    name="Sentinel Compliance Check",
+                    head_sha=head_sha,
+                    status="in_progress",
+                )
+                check_run_id = check_run.id
+                logger.info("✅ Created Check Run ID: %s", check_run_id)
+            except Exception as e:
+                logger.error("❌ Failed to create Check Run: %s", str(e))
+
+        # 5. Run the multi-agent LangGraph pipeline
         initial_state = {
             "pr_id": pr_number,
             "repo_name": repo_full_name,
@@ -198,20 +216,45 @@ async def github_webhook(request: Request):
                         pr_number, final_state.get("final_decision"))
         except Exception as e:
             logger.error("❌ Graph execution failed for PR #%d: %s", pr_number, str(e))
+            if check_run_id:
+                try:
+                    repo.get_check_run(check_run_id).edit(
+                        status="completed",
+                        conclusion="failure",
+                        output={"title": "Sentinel Error", "summary": f"Graph execution failed: {str(e)}"}
+                    )
+                except: pass
             return JSONResponse(status_code=500, content={"status": "error", "detail": str(e)})
 
-        # 5. Post the result back to the PR as a comment
-        integration = request.app.state.github_integration
-        logger.info("📝 Comment path: integration=%s, installation_id=%s", 
-                    integration is not None, installation_id)
-        
+        # 6. Post the result back to the PR as a comment and update Check Run
         if integration and installation_id:
             try:
                 gh = get_github_client(integration, installation_id)
                 comment_body = format_report(final_state)
                 post_pr_comment(gh, repo_full_name, pr_number, comment_body)
+
+                if check_run_id:
+                    decision = final_state.get("final_decision", "UNKNOWN")
+                    conclusion = "success" if decision == "GO" else "failure"
+                    
+                    # Construct detailed output summary
+                    summary_lines = [f"### Verdict: **{decision}**", ""]
+                    for comment in final_state.get("comments", []):
+                        summary_lines.append(f"- {comment}")
+                    
+                    repo.get_check_run(check_run_id).edit(
+                        status="completed",
+                        conclusion=conclusion,
+                        output={
+                            "title": f"Sentinel SDLC: {decision}",
+                            "summary": "\n".join(summary_lines),
+                            "text": "Detailed traces are available in the Cloud Run logs."
+                        }
+                    )
+                    logger.info("✅ Updated Check Run ID: %s with conclusion: %s", check_run_id, conclusion)
+
             except Exception as e:
-                logger.error("❌ Failed to post PR comment: %s", str(e), exc_info=True)
+                logger.error("❌ Failed to post result back to GitHub: %s", str(e), exc_info=True)
 
         return JSONResponse(status_code=200, content={
             "status": "completed",
