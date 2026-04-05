@@ -107,6 +107,27 @@ resource "google_service_account_iam_member" "workload_identity_user" {
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github_actions.name}/attribute.repository/${var.github_repository}"
 }
 
+# Grant deployer SA permission to push Docker images
+resource "google_project_iam_member" "deployer_artifact_registry" {
+  project = var.project_id
+  role    = "roles/artifactregistry.writer"
+  member  = "serviceAccount:${google_service_account.github_actions_deployer.email}"
+}
+
+# Grant deployer SA permission to deploy Cloud Run services
+resource "google_project_iam_member" "deployer_cloud_run" {
+  project = var.project_id
+  role    = "roles/run.admin"
+  member  = "serviceAccount:${google_service_account.github_actions_deployer.email}"
+}
+
+# Grant deployer SA permission to act as the compute SA (required for Cloud Run deploys)
+resource "google_project_iam_member" "deployer_sa_user" {
+  project = var.project_id
+  role    = "roles/iam.serviceAccountUser"
+  member  = "serviceAccount:${google_service_account.github_actions_deployer.email}"
+}
+
 # Artifact Registry for Docker images
 resource "google_artifact_registry_repository" "sentinel_repo" {
   location      = var.region
