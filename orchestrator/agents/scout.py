@@ -26,7 +26,11 @@ def scout_node(state: SentinelState) -> dict:
     diff_content = pr.get_files() # Or get the actual diff text
     # Actually, pr.get_pull(pr_id).diff_url is what we want to fetch as text
     import httpx
-    response = httpx.get(pr.diff_url, headers={"Authorization": f"token {gi.get_access_token(installation_id).token}"})
+    response = httpx.get(
+        pr.diff_url, 
+        headers={"Authorization": f"token {gi.get_access_token(installation_id).token}"},
+        follow_redirects=True
+    )
     diff_text = response.text
 
     return {
