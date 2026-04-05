@@ -18,6 +18,7 @@ from telemetry import setup_telemetry
 load_dotenv()
 
 GITHUB_APP_ID = os.getenv("GITHUB_APP_ID")
+GITHUB_PRIVATE_KEY = os.getenv("GITHUB_PRIVATE_KEY")
 GITHUB_PRIVATE_KEY_PATH = os.getenv("GITHUB_PRIVATE_KEY_PATH", "private-key.pem")
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET")
 
@@ -35,14 +36,22 @@ async def lifespan(app: FastAPI):
 
     # Initialise the GitHub App integration for authenticating as the app
     app.state.github_integration = None
-    if os.path.exists(GITHUB_PRIVATE_KEY_PATH):
+    private_key = None
+
+    if GITHUB_PRIVATE_KEY:
+        private_key = GITHUB_PRIVATE_KEY
+        logger.info("✅ GitHub Private Key loaded from environment variable")
+    elif os.path.exists(GITHUB_PRIVATE_KEY_PATH):
         with open(GITHUB_PRIVATE_KEY_PATH, "r") as f:
             private_key = f.read()
+        logger.info("✅ GitHub Private Key loaded from file: %s", GITHUB_PRIVATE_KEY_PATH)
+
+    if private_key:
         auth = Auth.AppAuth(app_id=int(GITHUB_APP_ID), private_key=private_key)
         app.state.github_integration = GithubIntegration(auth=auth)
         logger.info("✅ GitHub App integration initialised (App ID: %s)", GITHUB_APP_ID)
     else:
-        logger.warning("⚠️  Private key not found at %s – PR commenting disabled", GITHUB_PRIVATE_KEY_PATH)
+        logger.warning("⚠️  Private key not found – PR commenting disabled")
 
     setup_telemetry()
     logger.info("✅ OpenTelemetry tracing initialised")
