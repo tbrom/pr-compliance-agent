@@ -1,90 +1,117 @@
-# Sentinel-SDLC
+# Sentinel-SDLC 🛡️🚀
 
-Sentinel-SDLC is a Principal-level Agentic AI Platform designed to automate the AI Development Life Cycle (DLC) for high-compliance environments. It transitions beyond simple code-assist by operating as an autonomous gatekeeper within the Pull Request workflow, enforcing custom data schemas, security architectures, and compliance rules before human review.
+**Sentinel-SDLC** is a Principal-level Agentic AI Platform designed to automate the AI Development Life Cycle (DLC) for high-compliance environments. It serves as an autonomous gatekeeper within the Pull Request workflow, enforcing security architectures, deterministic compliance rules, and AI-driven reasoning before human review.
 
-## Architecture
+---
 
-The system coordinates specialized agentic components connected via an event-driven infrastructure.
+## 🏗️ System Architecture
+
+Sentinel-SDLC uses a multi-agent orchestration pattern powered by **LangGraph**, integrated with a deterministic **Java/Spring Boot** evaluator for rigid safety checks.
 
 ```mermaid
 graph TD
-    A[GitHub Webhook / GCP PubSub] --> B[LangGraph Orchestrator]
-    B --> Node1[Scout Agent: Fetches PR + Jira context]
-    Node1 --> Node2[Analyst Agent: Checks semantic compliance]
-    Node2 --> Node3[Validator Agent: Runs deterministic constraints]
-    Node3 --> Node4[Reporter Agent: Composes Go/No-Go Comment]
+    A[GitHub Pull Request] -- Webhook (HMAC) --> B[Orchestrator: FastAPI / LangGraph]
     
-    Node1 -.-> Jira[Jira MCP Server]
-    Node2 -.-> Std[Standards MCP Server]
-    Node4 -.-> Obs[Observability MCP Server]
-    Node3 -.-> Eval[Java Spring Evaluator Service]
+    subgraph "Agentic Reasoning Loop (LangGraph)"
+    B --> Scout[Scout: Fetches PR Diff]
+    Scout --> Analyst[Analyst: AI reasoning on intent]
+    Analyst --> Validator[Validator: Cross-service OIDC auth]
+    Validator --> Reporter[Reporter: Final Verdict & Check Update]
+    end
+    
+    Validator -- OIDC Auth --> Java[Java Evaluator: Spring Boot Security Scan]
+    Reporter -- Checks API --> GH_Checks[GitHub Check Run: BLOCK/PASS]
 ```
 
-## Features
+---
 
-- **Multi-Agent Orchestration**: Powered by **LangGraph**, utilizing specialized Python-based agents (Scout, Analyst, Validator, Reporter) inside a state-machine loop incorporating LLM reasoning.
-- **Deterministic Evaluation**: Relegates non-negotiable checks (e.g., regex secrets scanning, PII formatting) to a robust Java 17 / Spring Boot backend to prevent LLM hallucination overrides.
-- **Model Context Protocol (MCP) Clusters**: Modular integration endpoints ready to extend this backend *or* augment native IDEs via GitHub Copilot interfaces:
-  - `Jira MCP` for business context retrieval.
+## ✨ Key Features
+
+- **Agentic Orchestration (LangGraph)**: Specialized Python-based agents (Scout, Analyst, Validator, Reporter) operate inside a state-machine loop incorporating LLM reasoning.
+- **Formal PR Blocking (Checks API)**: Instead of just commenting, Sentinel creates a **"Sentinel Compliance Check"** that formally blocks non-compliant PRs from merging.
+- **Deterministic Scanning**: Relegates specialized checks (e.g., AWS secrets scanning, PII detection) to a robust **Java 17 / Spring Boot** backend to eliminate LLM hallucinations.
+- **Advanced Security Model**:
+  - **HMAC Signature Verification**: All GitHub webhooks are verified for authenticity.
+  - **OIDC Service-to-Service Auth**: Orchestrator-to-Evaluator communication is secured via Google ID tokens.
+  - **Secret Management**: All sensitive credentials (GitHub keys, secrets) are managed in **GCP Secret Manager**.
+- **Model Context Protocol (MCP)**: Modular integration endpoints for extending context:
+  - `Jira MCP` for business requirement retrieval.
   - `Standards MCP` for schema/compliance rule exposure.
-  - `Observability MCP` to query logging aggregators like Datadog or GCP Cloud Trace.
-- **AI Evaluation Framework**: A locally packaged evaluation suite of "Golden Dataset" PRs used to iteratively track the Precision, Recall, and F1 scores of the multi-agent system.
-- **Enterprise Observability**: Integrated with OpenTelemetry configuration to intercept and sink detailed traces of the agentic reasoning loops.
-- **Infrastructure as Code**: Terraform structures for deploying into GCP via Cloud Run and Pub/Sub.
+  - `Observability MCP` for querying GCP Cloud Trace and Datadog.
 
-## Prerequisites
+---
 
-- Python 3.11+
-- Java 17+
-- Google Cloud SDK & Terraform (for deployment)
+## 🛠️ Infrastructure & Deployment
 
-## Setup & Execution
+The platform is built on **Google Cloud Platform (GCP)** for enterprise-grade scalability and observability.
 
-### 1. The Multi-Agent Orchestrator
-Install standard Python dependencies and start the LangGraph Webhook server.
+### Components
+- **Orchestrator**: Python FastAPI service running in **Cloud Run**.
+- **Evaluator**: Java Spring Boot service running in **Cloud Run (Private access)**.
+- **Database/Storage**: GCP Secret Manager, Artifact Registry.
+- **CI/CD**: GitHub Actions pipeline for automated builds and deployment via **Workload Identity Federation (WIF)**.
 
-```bash
-cd orchestrator
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
-```
-
-### 2. Evaluator Microservice
-The rigid deterministic safety net.
-
-```bash
-cd evaluator
-./gradlew bootRun
-```
-
-### 3. MCP Servers
-Start up the targeted contexts. Note: you must use an MCP client or attach to your specific tools.
-
-```bash
-# Evaluate mock standards locally
-python3 mcp-servers/standards/server.py
-
-# Evaluate Jira / Datadog observability clusters similarly
-python3 mcp-servers/jira/server.py
-```
-
-### 4. Golden Dataset Evaluation
-To test the reliability of Sentinel-SDLC, you can run the localized ML ops script to pipe test PRs through the state machine.
-
-```bash
-cd evaluation
-python3 evaluate.py
-```
-
-## Infrastructure
-
-Use the provided `/terraform` deployment files to spin up the GCP resources necessary to take Sentinel remote:
-
+### Terraform Setup
+The infrastructure is fully defined as code in `/terraform`.
 ```bash
 cd terraform
 terraform init
 terraform apply
 ```
 
-This maps standard GitHub App webhooks natively to GCP Pub/Sub endpoints, providing robust message delivery retries into the Orchestrator Cloud Run clusters.
+### CI/CD Deployment
+The pipeline in `.github/workflows/deploy.yml` handles:
+1. Docker image generation and push to Artifact Registry.
+2. Deployment to Cloud Run with automatic secrets mounting.
+3. Environment injection (EVALUATOR_URL, GITHUB_APP_ID).
+
+---
+
+## 🚀 Getting Started
+
+### 1. GitHub App Configuration
+Sentinel-SDLC requires a **GitHub App** to be created and installed on your target repository.
+
+**Required Permissions:**
+- **Checks**: Read & Write (to block merges)
+- **Pull Requests**: Read & Write (to fetch diffs and post comments)
+- **Metadata**: Read-only (mandatory)
+
+**Webhook Configuration:**
+- **URL**: `https://your-orchestrator-url.a.run.app/api/github/webhooks`
+- **Secret**: Set a strong webhook secret and store it in GCP Secret Manager.
+
+### 2. Local Configuration
+Create a `.env` file in the `orchestrator/` directory:
+```env
+GITHUB_APP_ID=3285966
+GITHUB_WEBHOOK_SECRET=your_hmac_secret
+GITHUB_PRIVATE_KEY=your_app_private_key_string
+EVALUATOR_URL=https://your-evaluator-url.a.run.app
+```
+
+### 3. Running Locally
+**Orchestrator (Python):**
+```bash
+cd orchestrator
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8080
+```
+
+**Evaluator (Java):**
+```bash
+cd evaluator
+./gradlew bootRun
+```
+
+---
+
+## 📊 AI Evaluation Framework
+Sentinel includes a localized evaluation suite in `/evaluation/dataset` for tracking the Precision and Recall of the multi-agent system.
+```bash
+cd evaluation
+python3 evaluate.py
+```
+
+---
+*Powered by Sentinel-SDLC • Autonomous Compliance Engineering*
