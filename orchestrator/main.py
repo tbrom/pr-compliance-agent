@@ -27,24 +27,19 @@ logger = logging.getLogger("sentinel")
 # ---------------------------------------------------------------------------
 # App lifecycle – build the graph once at startup
 # ---------------------------------------------------------------------------
-sentinel_graph = None
-github_integration = None
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global sentinel_graph, github_integration
-
     # Compile the LangGraph state machine once
-    sentinel_graph = build_sentinel_graph()
+    app.state.sentinel_graph = build_sentinel_graph()
     logger.info("✅ Sentinel LangGraph compiled successfully")
 
     # Initialise the GitHub App integration for authenticating as the app
+    app.state.github_integration = None
     if os.path.exists(GITHUB_PRIVATE_KEY_PATH):
         with open(GITHUB_PRIVATE_KEY_PATH, "r") as f:
             private_key = f.read()
         auth = Auth.AppAuth(app_id=int(GITHUB_APP_ID), private_key=private_key)
-        github_integration = GithubIntegration(auth=auth)
+        app.state.github_integration = GithubIntegration(auth=auth)
         logger.info("✅ GitHub App integration initialised (App ID: %s)", GITHUB_APP_ID)
     else:
         logger.warning("⚠️  Private key not found at %s – PR commenting disabled", GITHUB_PRIVATE_KEY_PATH)
@@ -84,10 +79,10 @@ def verify_webhook_signature(payload_body: bytes, signature_header: str | None) 
     return hmac.compare_digest(expected, signature_header)
 
 
-def get_github_client(installation_id: int) -> Github:
+def get_github_client(integration: GithubIntegration, installation_id: int) -> Github:
     """Return an authenticated PyGithub client scoped to an installation."""
-    installation = github_integration.get_installations()[0]
-    return installation.get_github_for_installation()
+    # Authenticate specifically for this installation
+    return integration.get_github_for_installation(installation_id)
 
 
 def post_pr_comment(gh: Github, repo_full_name: str, pr_number: int, body: str):
@@ -138,8 +133,8 @@ def format_report(state: dict) -> str:
 # ---------------------------------------------------------------------------
 
 @app.get("/health")
-async def health():
-    return {"status": "healthy", "graph_ready": sentinel_graph is not None}
+async def health(request: Request):
+    return {"status": "healthy", "graph_ready": hasattr(request.app.state, "sentinel_graph")}
 
 
 @app.post("/api/github/webhooks")
@@ -186,7 +181,7 @@ async def github_webhook(request: Request):
         }
 
         try:
-            final_state = sentinel_graph.invoke(initial_state)
+            final_state = request.app.state.sentinel_graph.invoke(initial_state)
             logger.info("✅ Graph completed for PR #%d – decision: %s",
                         pr_number, final_state.get("final_decision"))
         except Exception as e:
@@ -194,11 +189,13 @@ async def github_webhook(request: Request):
             return JSONResponse(status_code=500, content={"status": "error", "detail": str(e)})
 
         # 5. Post the result back to the PR as a comment
+        integration = request.app.state.github_integration
         logger.info("📝 Comment path: integration=%s, installation_id=%s", 
-                    github_integration is not None, installation_id)
-        if github_integration:
+                    integration is not None, installation_id)
+        
+        if integration and installation_id:
             try:
-                gh = get_github_client(installation_id)
+                gh = get_github_client(integration, installation_id)
                 comment_body = format_report(final_state)
                 post_pr_comment(gh, repo_full_name, pr_number, comment_body)
             except Exception as e:
