@@ -185,3 +185,12 @@ cython_debug/
 build/
 evaluator/build/
 out/
+# Secrets
+*.pem
+.env
+
+# Terraform
+.terraform/
+terraform.tfstate
+terraform.tfstate.backup
+.terraform.tfstate.lock.info
