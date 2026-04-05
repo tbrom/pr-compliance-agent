@@ -21,6 +21,7 @@ GITHUB_APP_ID = os.getenv("GITHUB_APP_ID")
 GITHUB_PRIVATE_KEY = os.getenv("GITHUB_PRIVATE_KEY")
 GITHUB_PRIVATE_KEY_PATH = os.getenv("GITHUB_PRIVATE_KEY_PATH", "private-key.pem")
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET")
+EVALUATOR_URL = os.getenv("EVALUATOR_URL")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("sentinel")
@@ -180,6 +181,8 @@ async def github_webhook(request: Request):
         # 4. Run the multi-agent LangGraph pipeline
         initial_state = {
             "pr_id": pr_number,
+            "repo_name": repo_full_name,
+            "installation_id": installation_id,
             "diff_content": diff_url,
             "jira_context": None,
             "analyst_findings": [],
