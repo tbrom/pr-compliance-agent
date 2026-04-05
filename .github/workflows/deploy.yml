@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feat/modernize-java-evaluator
 
 env:
   GCP_PROJECT_ID: sentinel-deployment-492418
