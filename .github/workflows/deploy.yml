@@ -47,7 +47,8 @@ jobs:
             --platform managed \
             --set-env-vars="GITHUB_APP_ID=3285966,EVALUATOR_URL=https://sentinel-evaluator-79064771175.us-central1.run.app" \
             --set-secrets="GITHUB_PRIVATE_KEY=github-app-private-key:latest" \
-            --set-secrets="GITHUB_WEBHOOK_SECRET=github-webhook-secret:latest"
+            --set-secrets="GITHUB_WEBHOOK_SECRET=github-webhook-secret:latest" \
+            --set-secrets="GOOGLE_API_KEY=GOOGLE_API_KEY:latest"
 
   deploy-evaluator:
     runs-on: ubuntu-latest
