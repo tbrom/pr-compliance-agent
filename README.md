@@ -1,6 +1,6 @@
 # Sentinel-SDLC 🛡️🚀
 
-**Sentinel-SDLC** is a Principal-level Agentic AI Platform designed to automate the AI Development Life Cycle (DLC) for high-compliance environments. It serves as an autonomous gatekeeper within the Pull Request workflow, enforcing security architectures, deterministic compliance rules, and AI-driven reasoning before human review.
+**Sentinel-SDLC** is an Agentic AI Platform designed to automate the AI Development Life Cycle (DLC) for high-compliance environments. It serves as an autonomous gatekeeper within the Pull Request workflow, enforcing security architectures, deterministic compliance rules, and AI-driven reasoning before human review.
 
 ---
 
