@@ -1,0 +1,5 @@
+{
+    "id": 1,
+    "diff": "+ print('Hello World')",
+    "expected_decision": "GO"
+}

@@ -36,3 +36,22 @@ resource "google_service_account" "github_app_sa" {
   account_id   = "github-app-webhook"
   display_name = "GitHub App Webhook Service Account"
 }
+
+# Pub/Sub topic for GitHub Webhook events
+resource "google_pubsub_topic" "github_webhooks" {
+  name = "github-webhook-events"
+}
+
+# Pub/Sub push subscription to trigger the Orchestrator
+resource "google_pubsub_subscription" "orchestrator_push" {
+  name  = "orchestrator-push-sub"
+  topic = google_pubsub_topic.github_webhooks.name
+
+  push_config {
+    push_endpoint = "${google_cloud_run_v2_service.orchestrator.uri}/api/github/webhooks"
+    
+    oidc_token {
+      service_account_email = google_service_account.github_app_sa.email
+    }
+  }
+}

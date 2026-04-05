@@ -1,192 +1,85 @@
-# Sentinel Agent Core
+# Sentinel-SDLC
 
-Sentinel is an AI-powered security agent that integrates with GitHub to monitor code changes and enforce enterprise security standards. It uses a modular architecture with a Python-based Orchestrator, a Java-based Evaluator, and a standards-aware MCP server.
+Sentinel-SDLC is a Principal-level Agentic AI Platform designed to automate the AI Development Life Cycle (DLC) for high-compliance environments. It transitions beyond simple code-assist by operating as an autonomous gatekeeper within the Pull Request workflow, enforcing custom data schemas, security architectures, and compliance rules before human review.
 
 ## Architecture
 
+The system coordinates specialized agentic components connected via an event-driven infrastructure.
+
 ```mermaid
 graph TD
-    A[GitHub Webhook] --> B[Orchestrator]
-    B --> C[Gemini Reasoning Loop]
-    C --> D[MCP Server]
-    C --> E[Java Evaluator]
-    D --> F[Security Standards DB]
-    E --> G[Static Analysis Engine]
-    G --> H[Compliance Reports]
+    A[GitHub Webhook / GCP PubSub] --> B[LangGraph Orchestrator]
+    B --> Node1[Scout Agent: Fetches PR + Jira context]
+    Node1 --> Node2[Analyst Agent: Checks semantic compliance]
+    Node2 --> Node3[Validator Agent: Runs deterministic constraints]
+    Node3 --> Node4[Reporter Agent: Composes Go/No-Go Comment]
+    
+    Node1 -.-> Jira[Jira MCP Server]
+    Node2 -.-> Std[Standards MCP Server]
+    Node4 -.-> Obs[Observability MCP Server]
+    Node3 -.-> Eval[Java Spring Evaluator Service]
 ```
+
+## Features
+
+- **Multi-Agent Orchestration**: Powered by **LangGraph**, utilizing specialized Python-based agents (Scout, Analyst, Validator, Reporter) inside a state-machine loop incorporating LLM reasoning.
+- **Deterministic Evaluation**: Relegates non-negotiable checks (e.g., regex secrets scanning, PII formatting) to a robust Java 17 / Spring Boot backend to prevent LLM hallucination overrides.
+- **Model Context Protocol (MCP) Clusters**: Modular integration endpoints ready to extend this backend *or* augment native IDEs via GitHub Copilot interfaces:
+  - `Jira MCP` for business context retrieval.
+  - `Standards MCP` for schema/compliance rule exposure.
+  - `Observability MCP` to query logging aggregators like Datadog or GCP Cloud Trace.
+- **AI Evaluation Framework**: A locally packaged evaluation suite of "Golden Dataset" PRs used to iteratively track the Precision, Recall, and F1 scores of the multi-agent system.
+- **Enterprise Observability**: Integrated with OpenTelemetry configuration to intercept and sink detailed traces of the agentic reasoning loops.
+- **Infrastructure as Code**: Terraform structures for deploying into GCP via Cloud Run and Pub/Sub.
 
 ## Prerequisites
 
-- Python 3.8+
+- Python 3.11+
 - Java 17+
-- Docker (for containerized deployment)
-- Google Cloud SDK (for Terraform deployment)
+- Google Cloud SDK & Terraform (for deployment)
 
-## Installation
+## Setup & Execution
 
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/yourusername/sentinel-agent-core.git
-cd sentinel-agent-core
-```
-
-### 2. Install Python Dependencies
+### 1. The Multi-Agent Orchestrator
+Install standard Python dependencies and start the LangGraph Webhook server.
 
 ```bash
-pip install -r orchestrator/requirements.txt
-pip install -r mcp-server/requirements.txt
+cd orchestrator
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
 ```
 
-### 3. Build the Java Evaluator
+### 2. Evaluator Microservice
+The rigid deterministic safety net.
 
 ```bash
-cd evaluator
-./gradlew build
-```
-
-## Configuration
-
-### Environment Variables
-
-Create a `.env` file in the root directory:
-
-```env
-# GitHub Configuration
-GITHUB_TOKEN=your_github_token
-GITHUB_WEBHOOK_SECRET=your_webhook_secret
-
-# Google Cloud Configuration
-GOOGLE_CLOUD_PROJECT=your-project-id
-GOOGLE_CLOUD_REGION=us-central1
-
-# Gemini Configuration
-GEMINI_API_KEY=your_gemini_api_key
-
-# MCP Server Configuration
-MCP_SERVER_URL=http://localhost:8000
-```
-
-## Running the System
-
-### Option 1: Local Development
-
-Start the components individually:
-
-```bash
-# Start MCP Server
-python mcp-server/server.py &
-
-# Start Orchestrator
-uvicorn orchestrator.main:app --reload &
-
-# Start Evaluator (in a separate terminal)
 cd evaluator
 ./gradlew bootRun
 ```
 
-### Option 2: Containerized Deployment
-
-Build the Docker images:
-
-```bash
-docker build -t sentinel-orchestrator ./orchestrator
-docker build -t sentinel-evaluator ./evaluator
-docker build -t sentinel-mcp ./mcp-server
-```
-
-Run with Docker Compose:
+### 3. MCP Servers
+Start up the targeted contexts. Note: you must use an MCP client or attach to your specific tools.
 
 ```bash
-docker-compose up --build
+# Evaluate mock standards locally
+python3 mcp-servers/standards/server.py
+
+# Evaluate Jira / Datadog observability clusters similarly
+python3 mcp-servers/jira/server.py
 ```
 
-### Option 3: Terraform Deployment
-
-Deploy to Google Cloud:
+### 4. Golden Dataset Evaluation
+To test the reliability of Sentinel-SDLC, you can run the localized ML ops script to pipe test PRs through the state machine.
 
 ```bash
-cd terraform
-terraform init
-terraform apply
+cd evaluation
+python3 evaluate.py
 ```
 
-## Usage
+## Infrastructure
 
-### GitHub Integration
-
-1. Create a GitHub App in your GitHub settings
-2. Configure the webhook URL to point to your deployed orchestrator (e.g., `https://your-domain.com/api/github/webhooks`)
-3. Set the webhook events to "Pull requests"
-4. Install the app on your repository
-
-### MCP Server
-
-The MCP server provides access to security standards definitions:
-
-```bash
-# Get PCI-DSS standard
-mcp get-tool-call get_security_standard '{"standard_name": "PCI-DSS"}'
-
-# Get SOC2 standard
-mcp get-tool-call get_security_standard '{"standard_name": "SOC2"}'
-```
-
-## Project Structure
-
-```
-sentinel-agent-core/
-├── orchestrator/          # Python FastAPI application
-│   ├── main.py            # Webhook endpoint and Gemini integration
-│   └── requirements.txt   # Python dependencies
-├── mcp-server/            # MCP server implementation
-│   ├── server.py          # MCP server logic
-│   ├── standards.py       # Security standards definitions
-│   └── requirements.txt   # MCP dependencies
-├── evaluator/             # Java Spring Boot application
-│   ├── src/
-│   │   ├── main/java/com/example/sentinel/evaluator/
-│   │   │   ├── controller/  # REST API endpoints
-│   │   │   └── service/     # Security scanning logic
-│   │   └── test/java/com/example/sentinel/evaluator/
-│   │       └── service/     # Unit tests
-│   ├── build.gradle       # Gradle build configuration
-│   └── gradlew            # Gradle wrapper
-├── terraform/             # Terraform infrastructure code
-│   ├── main.tf            # Cloud resources
-│   ├── variables.tf       # Input variables
-│   └── outputs.tf         # Output values
-├── .env                   # Environment variables
-└── README.md              # Project documentation
-```
-
-## Security Standards
-
-The system supports the following security standards:
-
-- **PCI-DSS**: Payment Card Industry Data Security Standard
-- **SOC2**: System and Organization Controls
-- **OWASP**: Open Web Application Security Project
-- **DATA_FABRIC**: Enterprise data protection standards
-
-## Testing
-
-### Python Tests
-
-```bash
-pytest mcp-server/test_standards.py
-```
-
-### Java Tests
-
-```bash
-cd evaluator
-./gradlew test
-```
-
-## Deployment
-
-### Deploy to Google Cloud
+Use the provided `/terraform` deployment files to spin up the GCP resources necessary to take Sentinel remote:
 
 ```bash
 cd terraform
@@ -194,20 +87,4 @@ terraform init
 terraform apply
 ```
 
-### Deploy to Kubernetes
-
-```bash
-# Apply Kubernetes manifests
-kubectl apply -f k8s/
-```
-
-## Contributing
-
-1. Create a feature branch
-2. Make your changes
-3. Test your changes
-4. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This maps standard GitHub App webhooks natively to GCP Pub/Sub endpoints, providing robust message delivery retries into the Orchestrator Cloud Run clusters.
