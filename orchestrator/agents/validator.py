@@ -53,8 +53,13 @@ def validator_node(state: SentinelState) -> dict:
     Format: 'VIOLATION: <reason>' or 'COMPLIANT'.
     """
     
-    ai_validation = llm.invoke([HumanMessage(content=prompt)])
-    res_text = ai_validation.content.upper()
+    # Support multimodal or list-based content returned by some Gemini versions
+    res_content = ai_validation.content
+    if isinstance(res_content, list):
+        # Join list blocks (e.g. text + tool calls) if present
+        res_text = "".join([str(c) for c in res_content]).upper()
+    else:
+        res_text = str(res_content).upper()
     
     if "VIOLATION" in res_text:
         signals.append("KNOWLEDGE_VIOLATION_DETECTED")
