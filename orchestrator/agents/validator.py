@@ -53,6 +53,8 @@ def validator_node(state: SentinelState) -> dict:
     Format: 'VIOLATION: <reason>' or 'COMPLIANT'.
     """
     
+    ai_validation = llm.invoke([HumanMessage(content=prompt)])
+    
     # Support multimodal or list-based content returned by some Gemini versions
     res_content = ai_validation.content
     if isinstance(res_content, list):
