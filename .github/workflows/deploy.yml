@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feat/modernize-java-evaluator
+      - feat/modernize-java-evaluator-v2
 
 env:
   GCP_PROJECT_ID: sentinel-deployment-492418
