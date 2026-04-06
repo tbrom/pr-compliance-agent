@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+      - feat/modernize-java-evaluator
+      - feat/modernize-java-evaluator-v2
 
 env:
   GCP_PROJECT_ID: sentinel-deployment-492418
@@ -43,11 +45,13 @@ jobs:
           docker push $IMAGE_NAME
           gcloud run deploy sentinel-orchestrator \
             --image $IMAGE_NAME \
-            --region ${{ env.GCP_REGION }} \
-            --platform managed \
-            --set-env-vars="GITHUB_APP_ID=3285966,EVALUATOR_URL=https://sentinel-evaluator-79064771175.us-central1.run.app" \
-            --set-secrets="GITHUB_PRIVATE_KEY=github-app-private-key:latest" \
-            --set-secrets="GITHUB_WEBHOOK_SECRET=github-webhook-secret:latest"
+            --update-env-vars "GITHUB_APP_ID=3285966" \
+            --update-env-vars "EVALUATOR_URL=https://sentinel-evaluator-79064771175.us-central1.run.app" \
+            --remove-env-vars "GOOGLE_API_KEY" \
+            --update-secrets "GOOGLE_API_KEY=GOOGLE_API_KEY:latest" \
+            --update-secrets "GITHUB_PRIVATE_KEY=github-app-private-key:latest" \
+            --update-secrets "GITHUB_WEBHOOK_SECRET=github-webhook-secret:latest" \
+            --region ${{ env.GCP_REGION }}
 
   deploy-evaluator:
     runs-on: ubuntu-latest
@@ -77,4 +81,9 @@ jobs:
           IMAGE_NAME="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/sentinel-repo/evaluator:${{ github.sha }}"
           docker build -t $IMAGE_NAME ./evaluator
           docker push $IMAGE_NAME
-          gcloud run deploy sentinel-evaluator --image $IMAGE_NAME --region ${{ env.GCP_REGION }} --platform managed
+          gcloud run deploy sentinel-evaluator \
+            --image $IMAGE_NAME \
+            --region ${{ env.GCP_REGION }} \
+            --platform managed \
+            --remove-env-vars "GOOGLE_API_KEY" \
+            --update-secrets "GOOGLE_API_KEY=GOOGLE_API_KEY:latest"

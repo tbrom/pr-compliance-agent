@@ -17,7 +17,7 @@ def validator_node(state: SentinelState) -> dict:
     # 1. Knowledge Retrieval Phase (RAV)
     # We'll use Gemini to reason about which standards apply based on the diff.
     # In a full MCP production setup, this would be an actual tool call to the standards-mcp.
-    llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro", google_api_key=api_key)
+    llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", google_api_key=api_key)
     
     # 2. Call Java Evaluator (Deterministic Shield)
     if evaluator_url:
