@@ -45,7 +45,7 @@ jobs:
           gcloud run deploy sentinel-orchestrator \
           --update-env-vars "GITHUB_APP_ID=3285966" \
           --update-env-vars "EVALUATOR_URL=https://sentinel-evaluator-79064771175.us-central1.run.app" \
-          --clear-env-vars "GOOGLE_API_KEY" \
+          --remove-env-vars "GOOGLE_API_KEY" \
           --update-secrets "GOOGLE_API_KEY=GOOGLE_API_KEY:latest" \
           --update-secrets "GITHUB_PRIVATE_KEY=github-app-private-key:latest" \
           --update-secrets "GITHUB_WEBHOOK_SECRET=github-webhook-secret:latest" \
@@ -83,5 +83,5 @@ jobs:
             --image $IMAGE_NAME \
             --region ${{ env.GCP_REGION }} \
             --platform managed \
-            --clear-env-vars "GOOGLE_API_KEY" \
+            --remove-env-vars "GOOGLE_API_KEY" \
             --update-secrets "GOOGLE_API_KEY=GOOGLE_API_KEY:latest"
