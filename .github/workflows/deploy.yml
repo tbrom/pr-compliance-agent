@@ -43,9 +43,6 @@ jobs:
           docker build -t $IMAGE_NAME ./orchestrator
           docker push $IMAGE_NAME
           gcloud run deploy sentinel-orchestrator \
-            --image $IMAGE_NAME \
-            --region ${{ env.GCP_REGION }} \
-            --platform managed \
           --update-env-vars "GITHUB_APP_ID=3285966" \
           --update-env-vars "EVALUATOR_URL=https://sentinel-evaluator-79064771175.us-central1.run.app" \
           --update-secrets "GOOGLE_API_KEY=GOOGLE_API_KEY:latest" \
@@ -81,4 +78,8 @@ jobs:
           IMAGE_NAME="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/sentinel-repo/evaluator:${{ github.sha }}"
           docker build -t $IMAGE_NAME ./evaluator
           docker push $IMAGE_NAME
-          gcloud run deploy sentinel-evaluator --image $IMAGE_NAME --region ${{ env.GCP_REGION }} --platform managed
+          gcloud run deploy sentinel-evaluator \
+            --image $IMAGE_NAME \
+            --region ${{ env.GCP_REGION }} \
+            --platform managed \
+            --update-secrets "GOOGLE_API_KEY=GOOGLE_API_KEY:latest"
