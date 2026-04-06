@@ -197,94 +197,94 @@ async def github_webhook(request: Request):
     else:
         return JSONResponse(status_code=200, content={"status": "ignored", "event": event})
 
-        # 4. Create an initial in-progress Check Run
-        integration = request.app.state.github_integration
-        check_run_id = None
-        if integration and installation_id:
-            try:
-                gh = get_github_client(integration, installation_id)
-                repo = gh.get_repo(repo_full_name)
-                check_run = repo.create_check_run(
-                    name="Sentinel Compliance Check",
-                    head_sha=head_sha,
-                    status="in_progress",
-                )
-                check_run_id = check_run.id
-                logger.info("✅ Created Check Run ID: %s", check_run_id)
-            except Exception as e:
-                logger.error("❌ Failed to create Check Run: %s", str(e))
-
-        # 5. Run the multi-agent LangGraph pipeline
-        initial_state = {
-            "pr_id": pr_number,
-            "repo_name": repo_full_name,
-            "installation_id": installation_id,
-            "diff_content": diff_url,
-            "jira_context": None,
-            "analyst_findings": [],
-            "validator_signals": [],
-            "final_decision": "",
-            "comments": [],
-            "error": "",
-        }
-
+    # 4. Create an initial in-progress Check Run
+    integration = request.app.state.github_integration
+    check_run_id = None
+    if integration and installation_id:
         try:
-            final_state = request.app.state.sentinel_graph.invoke(initial_state)
-            logger.info("✅ Graph completed for PR #%d – decision: %s",
-                        pr_number, final_state.get("final_decision"))
+            gh = get_github_client(integration, installation_id)
+            repo = gh.get_repo(repo_full_name)
+            check_run = repo.create_check_run(
+                name="Sentinel Compliance Check",
+                head_sha=head_sha,
+                status="in_progress",
+            )
+            check_run_id = check_run.id
+            logger.info("✅ Created Check Run ID: %s", check_run_id)
         except Exception as e:
-            logger.error("❌ Graph execution failed for PR #%d: %s", pr_number, str(e))
-            if check_run_id:
-                try:
-                    repo.get_check_run(check_run_id).edit(
-                        status="completed",
-                        conclusion="failure",
-                        output={"title": "Sentinel Error", "summary": f"Graph execution failed: {str(e)}"}
-                    )
-                except: pass
-            return JSONResponse(status_code=500, content={"status": "error", "detail": str(e)})
+            logger.error("❌ Failed to create Check Run: %s", str(e))
 
-        # 6. Post the result back to the PR as a comment and update Check Run
-        if integration and installation_id:
+    # 5. Run the multi-agent LangGraph pipeline
+    initial_state = {
+        "pr_id": pr_number,
+        "repo_name": repo_full_name,
+        "installation_id": installation_id,
+        "diff_content": diff_url,
+        "jira_context": None,
+        "analyst_findings": [],
+        "validator_signals": [],
+        "final_decision": "",
+        "comments": [],
+        "error": "",
+    }
+
+    try:
+        final_state = request.app.state.sentinel_graph.invoke(initial_state)
+        logger.info("✅ Graph completed for PR #%d – decision: %s",
+                    pr_number, final_state.get("final_decision"))
+    except Exception as e:
+        logger.error("❌ Graph execution failed for PR #%d: %s", pr_number, str(e))
+        if check_run_id:
             try:
-                gh = get_github_client(integration, installation_id)
-                comment_body = format_report(final_state)
-                post_pr_comment(gh, repo_full_name, pr_number, comment_body)
+                repo.get_check_run(check_run_id).edit(
+                    status="completed",
+                    conclusion="failure",
+                    output={"title": "Sentinel Error", "summary": f"Graph execution failed: {str(e)}"}
+                )
+            except: pass
+        return JSONResponse(status_code=500, content={"status": "error", "detail": str(e)})
 
-                if check_run_id:
-                    decision = final_state.get("final_decision", "UNKNOWN")
-                    conclusion = "success" if decision == "GO" else "failure"
-                    
-                    # Construct detailed output summary
-                    summary_lines = [f"### Verdict: **{decision}**", ""]
-                    for comment in final_state.get("comments", []):
-                        summary_lines.append(f"- {comment}")
-                    
-                    repo.get_check_run(check_run_id).edit(
-                        status="completed",
-                        conclusion=conclusion,
-                        output={
-                            "title": f"Sentinel SDLC: {decision}",
-                            "summary": "\n".join(summary_lines),
-                            "text": "Detailed traces are available in the Cloud Run logs."
-                        }
-                    )
-                    logger.info("✅ Updated Check Run ID: %s with conclusion: %s", check_run_id, conclusion)
+    # 6. Post the result back to the PR as a comment and update Check Run
+    if integration and installation_id:
+        try:
+            gh = get_github_client(integration, installation_id)
+            comment_body = format_report(final_state)
+            post_pr_comment(gh, repo_full_name, pr_number, comment_body)
 
-                # Store result in HISTORY for Copilot lookup
-                SENTINEL_HISTORY[f"{repo_full_name}#{pr_number}"] = {
-                    "decision": final_state.get("final_decision", "UNKNOWN"),
-                    "findings": final_state.get("analyst_findings", []),
-                    "signals": final_state.get("validator_signals", []),
-                }
+            if check_run_id:
+                decision = final_state.get("final_decision", "UNKNOWN")
+                conclusion = "success" if decision == "GO" else "failure"
+                
+                # Construct detailed output summary
+                summary_lines = [f"### Verdict: **{decision}**", ""]
+                for comment in final_state.get("comments", []):
+                    summary_lines.append(f"- {comment}")
+                
+                repo.get_check_run(check_run_id).edit(
+                    status="completed",
+                    conclusion=conclusion,
+                    output={
+                        "title": f"Sentinel SDLC: {decision}",
+                        "summary": "\n".join(summary_lines),
+                        "text": "Detailed traces are available in the Cloud Run logs."
+                    }
+                )
+                logger.info("✅ Updated Check Run ID: %s with conclusion: %s", check_run_id, conclusion)
 
-            except Exception as e:
-                logger.error("❌ Failed to post result back to GitHub: %s", str(e), exc_info=True)
+            # Store result in HISTORY for Copilot lookup
+            SENTINEL_HISTORY[f"{repo_full_name}#{pr_number}"] = {
+                "decision": final_state.get("final_decision", "UNKNOWN"),
+                "findings": final_state.get("analyst_findings", []),
+                "signals": final_state.get("validator_signals", []),
+            }
 
-        return JSONResponse(status_code=200, content={
-            "status": "completed",
-            "decision": final_state.get("final_decision"),
-        })
+        except Exception as e:
+            logger.error("❌ Failed to post result back to GitHub: %s", str(e), exc_info=True)
+
+    return JSONResponse(status_code=200, content={
+        "status": "completed",
+        "decision": final_state.get("final_decision"),
+    })
 
     return JSONResponse(status_code=200, content={"status": "ignored", "event": event})
 
