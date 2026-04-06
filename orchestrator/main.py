@@ -176,7 +176,9 @@ async def github_webhook(request: Request):
         pr = payload["pull_request"]
         pr_number = pr["number"]
         repo_full_name = payload["repository"]["full_name"]
+        installation_id = payload.get("installation", {}).get("id")
         head_sha = pr["head"]["sha"]
+        diff_url = pr.get("diff_url", "")
         logger.info("🔍 Processing PR #%d on %s (head_sha=%s)", pr_number, repo_full_name, head_sha)
 
     # 4. Handle push events (to main/master)
