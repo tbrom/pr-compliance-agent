@@ -288,8 +288,6 @@ async def github_webhook(request: Request):
         "decision": final_state.get("final_decision"),
     })
 
-    return JSONResponse(status_code=200, content={"status": "ignored", "event": event})
-
 
 # ---------------------------------------------------------------------------
 # GitHub Copilot Extension Endpoint

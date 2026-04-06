@@ -1,104 +1,83 @@
-# Sentinel-SDLC 🛡️🚀
+# 🛰️ Sentinel-SDLC: Multi-Agent Security Compliance
 
-**Sentinel-SDLC** is a Principal-level Agentic AI Platform designed to automate the AI Development Life Cycle (DLC) for high-compliance environments. It serves as an autonomous gatekeeper within the Pull Request workflow, enforcing security architectures, semantic compliance rules, and AI-driven reasoning before human review.
+Sentinel-SDLC is a modern, AI-driven security compliance engine designed to gate Pull Requests with state-of-the-art semantic reasoning. It moves beyond legacy regex-based scanning by utilizing a Distributed Multi-Agent Graph to analyze code changes for deep security risks, PII exposure, and hardcoded secrets.
 
 ---
 
-## 🏗️ System Architecture
+## 🏗️ Architecture: Multi-Agent Sentinel (RAV)
 
-Sentinel-SDLC uses a multi-agent orchestration pattern powered by **LangGraph**, integrated with a deterministic **Java/Spring Boot** evaluator and a dynamic **Vector Database (ChromaDB)** for knowledge retrieval.
+Sentinel operates as a **Retrieval-Augmented Validation (RAV)** system. When a webhook is received, it triggers a multi-stage LangGraph pipeline:
 
 ```mermaid
 graph TD
-    A[GitHub Pull Request] -- Webhook (HMAC) --> B[Orchestrator: FastAPI / LangGraph]
-    
-    subgraph "Agentic Reasoning Loop (LangGraph)"
-    B --> Scout[Scout: Fetches PR Diff]
-    Scout --> Analyst[Analyst: AI reasoning on intent]
-    Analyst --> Validator[Validator: Dual-Layer Scanning]
-    Validator --> Reporter[Reporter: Final Verdict & Check Update]
-    end
-
-    subgraph "Knowledge Retrieval (RAV)"
-    Validator -- Search --> MCP_Std[Standards MCP: ChromaDB]
-    MCP_Std -- Rules --> Validator
-    end
-    
-    Validator -- OIDC Auth --> Java[Java Evaluator: Spring Boot Security Scan]
-    Reporter -- Checks API --> GH_Checks[GitHub Check Run: BLOCK/PASS]
-    
-    User[Developer Chat] -- @sentinel-sdlc --> Copilot[Copilot Extension: Interactive Guidance]
-    Copilot -- Context --> B
+    A[GitHub Webhook] --> B[Scout Agent]
+    B --> C[Java Evaluator Node]
+    C --> D[Analyst Agent]
+    D --> E[Security AI Validator]
+    E --> F[Decision Node]
+    F -->|GO| G[Post Success & Merge]
+    F -->|VIOLATION| H[Post Failure & Block]
 ```
 
----
+### 🧠 Core Components
 
-## ✨ Key Features
-
-- **Retrieval-Augmented Validation (RAV)**: Moves beyond hardcoded checks. Sentinel semantically searches enterprise standards (`standards.md`) using **ChromaDB** to find and enforce relevant rules for every PR.
-- **Agentic Orchestration (LangGraph)**: Specialized Python agents (Scout, Analyst, Validator, Reporter) operate inside a state-machine loop incorporating LLM reasoning.
-- **GitHub Copilot Extension**: Interact with Sentinel directly in your IDE. Developers can ask `@sentinel-sdlc` why a PR was blocked or how to remediate an architectural violation.
-- **Formal PR Blocking (Checks API)**: Sentinel creates a **"Sentinel Compliance Check"** that formally blocks non-compliant PRs from merging.
-- **Deterministic Scanning**: Relegates high-fidelity checks (e.g., regex secrets scanning) to a robust **Java 17 / Spring Boot** backend to eliminate LLM hallucinations.
-- **Advanced Security Model**:
-  - **HMAC Signature Verification**: All GitHub webhooks are verified for authenticity.
-  - **OIDC Service-to-Service Auth**: Orchestrator-to-Evaluator communication is secured via Google ID tokens.
-  - **Secret Management**: All sensitive credentials are managed in **GCP Secret Manager**.
+- **`scout-agent`**: Fetches the PR diff and identifies the relevant enterprise standards.
+- **`Java Evaluator`**: Performs deterministic regex-based secret and PII detection (Shield).
+- **`analyst-agent`**: Performs deep semantic analysis using **LangChain-Python**.
+- **`SecurityAIService`**: The heart of the Java Evaluator, using **LangChain4j** and **Google Gemini Flash** for high-speed security reasoning.
 
 ---
 
-## 🛠️ Infrastructure & Deployment
+## 🛠️ Technology Stack
 
-The platform is built on **Google Cloud Platform (GCP)** for enterprise-grade scalability and observability.
-
-### Components
-- **Orchestrator**: Python FastAPI service running in **Cloud Run**.
-- **Evaluator**: Java Spring Boot service running in **Cloud Run (Private access)**.
-- **Knowledge Base**: ChromaDB on-disk storage within the Standards MCP.
-- **CI/CD**: GitHub Actions pipeline for automated builds and deployment via **Workload Identity Federation (WIF)**.
+- **Orchestrator (Python)**: [FastAPI](https://fastapi.tiangolo.com/), [LangGraph](https://python.langchain.com/docs/langgraph), [PyGithub](https://github.com/PyGithub/PyGithub).
+- **Evaluator (Java)**: [Spring Boot](https://spring.io/projects/spring-boot), [LangChain4j](https://github.com/langchain4j/langchain4j).
+- **AI Engine**: [Google Gemini 2.0 Flash](https://deepmind.google/technologies/gemini/).
+- **Infrastructure**: [Google Cloud Run](https://cloud.google.com/run), [GitHub Actions](https://github.com/features/actions).
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Setup & Deployment
 
-### 1. Compliance-as-Code
-To change your organizational policies, simply edit **`mcp-servers/standards/standards.md`**. The system will automatically re-index these rules into ChromaDB for dynamic enforcement.
+### 1. Environment Variables
+Ensure the following variables are configured in **GCP Secret Manager**:
 
-### 2. GitHub App Configuration
-Sentinel-SDLC requires a **GitHub App** to be created and installed on your target repository.
+| Variable | Description |
+| :--- | :--- |
+| `GITHUB_APP_ID` | The ID of your GitHub App. |
+| `GITHUB_PRIVATE_KEY` | The RSA private key for your GitHub App. |
+| `GITHUB_WEBHOOK_SECRET` | The secret used to verify webhook signatures. |
+| `GOOGLE_API_KEY` | Your Google AI (Gemini) API Key. |
+| `EVALUATOR_URL` | The URL of the internal Java Evaluator service. |
 
-**Required Permissions:**
-- **Checks**: Read & Write (to block merges)
-- **Pull Requests**: Read & Write (to fetch diffs and post comments)
-- **Copilot Chat**: Read-only (required for Extension interface)
-
-### 3. Copilot Extension Setup
-1. Enable **Copilot Chat** in your GitHub App settings.
-2. Set the **Copilot App URL** to `https://your-orchestrator-url.a.run.app/api/copilot`.
-3. Mention `@sentinel-sdlc` in your IDE chat to start a conversation.
-
-### 4. Running Locally
-**Orchestrator (Python):**
+### 2. Local Development
 ```bash
+# Orchestrator
 cd orchestrator
 pip install -r requirements.txt
-uvicorn main:app --reload --port 8080
+python main.py
+
+# Evaluator
+cd evaluator
+./gradlew bootRun
 ```
 
-**Standards MCP (Python/ChromaDB):**
-```bash
-cd mcp-servers/standards
-python3 server.py
-```
+### 3. Deployment
+The services are automatically deployed to Google Cloud Run via the `.github/workflows/deploy.yml` pipeline.
 
 ---
 
-## 📊 AI Evaluation Framework
-Sentinel includes a localized evaluation suite in `/evaluation/dataset` for tracking the Precision and Recall of the multi-agent system.
-```bash
-cd evaluation
-python3 evaluate.py
-```
+## 🛡️ Usage: Sentinel PR Gating
+
+Sentinel is enforced via **GitHub Branch Protection Rulesets**. 
+1. Open a Pull Request.
+2. The **Sentinel Compliance Check** will trigger automatically.
+3. If the AI detects a violation (e.g., hardcoded credentials or unauthenticated internal calls), the check will fail and block the merge.
+4. Review the detailed agent trace in the PR comments to remediate the findings.
 
 ---
-*Powered by Sentinel-SDLC • Autonomous Compliance Engineering*
+
+> [!TIP]
+> **Performance**: The system uses **Gemini 2.0 Flash** for ultra-low latency semantic scans, typically completing a full PR analysis in under 10 seconds.
+
+*Powered by Sentinel-SDLC • Built for Enterprise Governance*
