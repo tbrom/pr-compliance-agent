@@ -16,7 +16,7 @@ public class GeminiConfig {
     public ChatLanguageModel chatLanguageModel() {
         return GoogleAiGeminiChatModel.builder()
                 .apiKey(apiKey)
-                .modelName("gemini-2.0-flash")
+                .modelName("gemini-flash-latest")
                 .build();
     }
 }
