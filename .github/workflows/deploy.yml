@@ -46,9 +46,12 @@ jobs:
             --image $IMAGE_NAME \
             --region ${{ env.GCP_REGION }} \
             --platform managed \
-            --update-env-vars "GITHUB_APP_ID=3285966" \
-            --update-env-vars "GOOGLE_API_KEY=projects/${{ env.GCP_PROJECT_ID }}/secrets/GOOGLE_API_KEY/versions/latest" \
-            --update-env-vars "EVALUATOR_URL=https://sentinel-evaluator-79064771175.us-central1.run.app"
+          --update-env-vars "GITHUB_APP_ID=3285966" \
+          --update-env-vars "EVALUATOR_URL=https://sentinel-evaluator-79064771175.us-central1.run.app" \
+          --update-secrets "GOOGLE_API_KEY=GOOGLE_API_KEY:latest" \
+          --update-secrets "GITHUB_PRIVATE_KEY=github-app-private-key:latest" \
+          --update-secrets "GITHUB_WEBHOOK_SECRET=github-webhook-secret:latest" \
+          --region ${{ env.GCP_REGION }}
 
   deploy-evaluator:
     runs-on: ubuntu-latest
