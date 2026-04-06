@@ -178,9 +178,21 @@ async def github_webhook(request: Request):
         repo_full_name = payload["repository"]["full_name"]
         installation_id = payload.get("installation", {}).get("id")
         diff_url = pr.get("diff_url", "")
-        head_sha = pr["head"]["sha"]
-
         logger.info("🔍 Processing PR #%d on %s (head_sha=%s)", pr_number, repo_full_name, head_sha)
+
+    # 4. Handle push events (to main/master)
+    elif event == "push":
+        # Only scan if it's the default branch to avoid noise
+        ref = payload.get("ref", "")
+        if not ref.endswith("/main"):
+             return JSONResponse(status_code=200, content={"status": "ignored", "ref": ref})
+
+        repo_full_name = payload["repository"]["full_name"]
+        installation_id = payload.get("installation", {}).get("id")
+        head_sha = payload.get("after", "")
+        pr_number = 0  # Not a PR, but we'll use 0 as a placeholder
+
+        logger.info("🔍 Processing Push to %s on %s (head_sha=%s)", ref, repo_full_name, head_sha)
 
         # 4. Create an initial in-progress Check Run
         integration = request.app.state.github_integration
