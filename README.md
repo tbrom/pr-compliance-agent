@@ -10,29 +10,34 @@ Sentinel operates as a **Retrieval-Augmented Validation (RAV)** system. When a w
 
 ```mermaid
 graph TB
-    subgraph "GitHub Ecosystem"
-        A[GitHub Repository] -- Webhook: PR/Push --> B[GitHub App]
-        B -- X-GitHub-Event --> C[Sentinel Orchestrator]
-        K[GitHub API] -- Update Status / Comment --> A
-    end
-
-    subgraph "Sentinel Orchestrator (Python/FastAPI)"
-        C --> D[LangGraph State Machine]
-        subgraph "Agents"
-            D --> E[Scout Agent: Fetch Diff/Context]
-            D --> F[Analyst Agent: Ticket Alignment]
-            D --> G[Validator Agent: Security Check]
+    subgraph "Google Cloud Platform (us-central1)"
+        subgraph "Cloud Run: Sentinel Orchestrator"
+            C[Sentinel Orchestrator] --> D[LangGraph State Machine]
+            subgraph "Agents"
+                D --> E[Scout Agent: Fetch Diff/Context]
+                D --> F[Analyst Agent: Ticket Alignment]
+                D --> G[Validator Agent: Security Check]
+            end
         end
-        E -- Fetch Raw Diff (HTTP) --> A
-        F -- Ticket Context (MCP) --> N[Jira MCP Server]
-        G -- Internal Call: mTLS --> H[Java Evaluator]
-        D -- Final Verdict --> K
+
+        subgraph "Cloud Run: Java Evaluator"
+            H[Java Evaluator] --> I[SecurityAIService: LangChain4j]
+            I --> J[Deterministic Shield: Regex/PII]
+        end
+
+        subgraph "Secret Manager"
+            M[API Keys & GitHub Secrets]
+        end
+
+        M -- Secret Mount --> C
+        M -- Secret Mount --> H
     end
 
-    subgraph "Java Evaluator (Spring Boot)"
-        H --> I[SecurityAIService: LangChain4j]
-        I --> J[Deterministic Shield: Regex/PII]
-    end
+    A[GitHub Repository] -- Webhook --> C
+    E -- Fetch Raw Diff (HTTP) --> A
+    F -- Ticket Context (MCP) --> N[Jira MCP Server]
+    G -- Internal Call: mTLS --> H
+    D -- Final Verdict --> K[GitHub Check Runs]
 
     subgraph "External Foundation Models"
         F -- Alignment Scan (API) --> L[Google Gemini / LLM Providers]
