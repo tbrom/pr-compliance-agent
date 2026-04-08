@@ -9,14 +9,38 @@ Sentinel-SDLC is a modern, AI-driven security compliance engine designed to gate
 Sentinel operates as a **Retrieval-Augmented Validation (RAV)** system. When a webhook is received, it triggers a multi-stage LangGraph pipeline:
 
 ```mermaid
-graph TD
-    A[GitHub Webhook] --> B[Scout Agent]
-    B --> C[Java Evaluator Node]
-    C --> D[Analyst Agent]
-    D --> E[Security AI Validator]
-    E --> F[Decision Node]
-    F -->|GO| G[Post Success & Merge]
-    F -->|VIOLATION| H[Post Failure & Block]
+graph TB
+    subgraph "GitHub Ecosystem"
+        A[GitHub Repository] -- Webhook: PR/Push --> B[GitHub App]
+        B -- X-GitHub-Event --> C[Sentinel Orchestrator]
+        K[GitHub API] -- Update Status / Comment --> A
+    end
+
+    subgraph "Sentinel Orchestrator (Python/FastAPI)"
+        C --> D[LangGraph State Machine]
+        subgraph "Agents"
+            D --> E[Scout Agent: Fetch Diff/Context]
+            D --> F[Analyst Agent: Semantic Reasoning]
+            D --> G[Validator Agent: Security Check]
+        end
+        G -- Internal Call: mTLS --> H[Java Evaluator]
+        D -- Final Verdict --> K
+    end
+
+    subgraph "Java Evaluator (Spring Boot)"
+        H --> I[SecurityAIService: LangChain4j]
+        I --> J[Deterministic Shield: Regex/PII]
+    end
+
+    subgraph "AI Intelligence"
+        G -- Semantic Scan --> L[Google Gemini 2.0 Flash]
+        I -- Deep Scan --> L
+    end
+
+    subgraph "GCP Infrastructure"
+        M[Secret Manager] -- API Keys / Private Key --> C
+        M -- API Keys --> H
+    end
 ```
 
 ### 🧠 Core Components
