@@ -33,7 +33,7 @@ graph TB
     end
 
     subgraph "AI Intelligence"
-        G -- Semantic Scan --> L[Google Gemini 2.0 Flash]
+        G -- Semantic Scan --> L[Google Gemini Flash]
         I -- Deep Scan --> L
     end
 
@@ -56,7 +56,7 @@ graph TB
 
 - **Orchestrator (Python)**: [FastAPI](https://fastapi.tiangolo.com/), [LangGraph](https://python.langchain.com/docs/langgraph), [PyGithub](https://github.com/PyGithub/PyGithub).
 - **Evaluator (Java)**: [Spring Boot](https://spring.io/projects/spring-boot), [LangChain4j](https://github.com/langchain4j/langchain4j).
-- **AI Engine**: [Google Gemini 2.0 Flash](https://deepmind.google/technologies/gemini/).
+- **AI Engine**: [Google Gemini Flash (Latest)](https://deepmind.google/technologies/gemini/).
 - **Infrastructure**: [Google Cloud Run](https://cloud.google.com/run), [GitHub Actions](https://github.com/features/actions).
 
 ---
@@ -102,6 +102,6 @@ Sentinel is enforced via **GitHub Branch Protection Rulesets**.
 ---
 
 > [!TIP]
-> **Performance**: The system uses **Gemini 2.0 Flash** for ultra-low latency semantic scans, typically completing a full PR analysis in under 10 seconds.
+> **Performance**: The system uses **Gemini Flash** for ultra-low latency semantic scans, typically completing a full PR analysis in under 10 seconds.
 
 *Powered by Sentinel-SDLC • Built for Enterprise Governance*
