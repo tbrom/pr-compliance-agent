@@ -178,8 +178,9 @@ async def github_webhook(request: Request):
         repo_full_name = payload["repository"]["full_name"]
         installation_id = payload.get("installation", {}).get("id")
         head_sha = pr["head"]["sha"]
+        branch_name = pr["head"]["ref"]
         diff_url = pr.get("diff_url", "")
-        logger.info("🔍 Processing PR #%d on %s (head_sha=%s)", pr_number, repo_full_name, head_sha)
+        logger.info("🔍 Processing PR #%d on %s (branch: %s, head_sha=%s)", pr_number, repo_full_name, branch_name, head_sha)
 
     # 4. Handle push events (to main/master)
     elif event == "push":
@@ -191,6 +192,7 @@ async def github_webhook(request: Request):
         repo_full_name = payload["repository"]["full_name"]
         installation_id = payload.get("installation", {}).get("id")
         head_sha = payload.get("after", "")
+        branch_name = ref.split("/")[-1]
         pr_number = 0  # Not a PR, but we'll use 0 as a placeholder
         diff_url = ""  # Will be handled by the scout agent
 
@@ -220,6 +222,8 @@ async def github_webhook(request: Request):
     initial_state = {
         "pr_id": pr_number,
         "repo_name": repo_full_name,
+        "branch_name": branch_name,
+        "jira_id": "",
         "installation_id": installation_id,
         "diff_content": diff_url,
         "jira_context": None,
