@@ -23,6 +23,7 @@ graph TB
             D --> F[Analyst Agent: Semantic Reasoning]
             D --> G[Validator Agent: Security Check]
         end
+        E -- Fetch Raw Diff (HTTP) --> A
         G -- Internal Call: mTLS --> H[Java Evaluator]
         D -- Final Verdict --> K
     end
