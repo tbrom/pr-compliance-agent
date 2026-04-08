@@ -29,20 +29,14 @@ graph TB
         D -- Final Verdict --> K
     end
 
+    subgraph "External Foundation Models"
+        F -- Alignment Scan (API) --> L[Google Gemini / LLM Providers]
+        G -- Security Scan (API) --> L
+        I -- Deep Scan (API) --> L
+    end
+
     subgraph "External Cloud Services"
         N -- REST API (OAuth) --> O[Jira Cloud / Atlassian]
-        L
-    end
-
-    subgraph "Java Evaluator (Spring Boot)"
-        H --> I[SecurityAIService: LangChain4j]
-        I --> J[Deterministic Shield: Regex/PII]
-    end
-
-    subgraph "AI Intelligence"
-        F -- Alignment Scan --> L[Google Gemini Flash]
-        G -- Security Scan --> L
-        I -- Deep Scan --> L
     end
 
     subgraph "GCP Infrastructure"
