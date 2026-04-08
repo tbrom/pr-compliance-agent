@@ -20,12 +20,18 @@ graph TB
         C --> D[LangGraph State Machine]
         subgraph "Agents"
             D --> E[Scout Agent: Fetch Diff/Context]
-            D --> F[Analyst Agent: Semantic Reasoning]
+            D --> F[Analyst Agent: Ticket Alignment]
             D --> G[Validator Agent: Security Check]
         end
         E -- Fetch Raw Diff (HTTP) --> A
+        F -- Ticket Context (MCP) --> N[Jira MCP Server]
         G -- Internal Call: mTLS --> H[Java Evaluator]
         D -- Final Verdict --> K
+    end
+
+    subgraph "External Cloud Services"
+        N -- REST API (OAuth) --> O[Jira Cloud / Atlassian]
+        L
     end
 
     subgraph "Java Evaluator (Spring Boot)"
@@ -34,7 +40,8 @@ graph TB
     end
 
     subgraph "AI Intelligence"
-        G -- Semantic Scan --> L[Google Gemini Flash]
+        F -- Alignment Scan --> L[Google Gemini Flash]
+        G -- Security Scan --> L
         I -- Deep Scan --> L
     end
 
