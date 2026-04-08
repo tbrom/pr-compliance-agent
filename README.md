@@ -48,11 +48,6 @@ graph TB
     subgraph "External Cloud Services"
         N -- REST API (OAuth) --> O[Jira Cloud / Atlassian]
     end
-
-    subgraph "GCP Infrastructure"
-        M[Secret Manager] -- API Keys / Private Key --> C
-        M -- API Keys --> H
-    end
 ```
 
 ### 🧠 Core Components
