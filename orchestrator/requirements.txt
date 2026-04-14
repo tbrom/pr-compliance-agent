@@ -15,3 +15,5 @@ opentelemetry-sdk
 google-auth
 cryptography
 langchain-google-genai
+opentelemetry-exporter-gcp-trace
+opentelemetry-instrumentation-fastapi

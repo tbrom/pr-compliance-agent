@@ -6,11 +6,12 @@ provider "google" {
 # Mock infrastructure for Orchestrator (FastAPI) and Evaluator (Java)
 # Using Cloud Run as an example of modern serverless container hosting
 resource "google_cloud_run_v2_service" "orchestrator" {
-  name     = "sentinel-orchestrator"
-  location = var.region
+  name                = "sentinel-orchestrator"
+  location            = var.region
   deletion_protection = false
 
   template {
+    service_account = google_service_account.cloud_run_runtime.email
     containers {
       image = "us-docker.pkg.dev/cloudrun/container/hello"
       env {
@@ -28,11 +29,12 @@ resource "google_cloud_run_v2_service" "orchestrator" {
 }
 
 resource "google_cloud_run_v2_service" "evaluator" {
-  name     = "sentinel-evaluator"
-  location = var.region
+  name                = "sentinel-evaluator"
+  location            = var.region
   deletion_protection = false
 
   template {
+    service_account = google_service_account.cloud_run_runtime.email
     containers {
       image = "us-docker.pkg.dev/cloudrun/container/hello"
     }
@@ -51,6 +53,19 @@ resource "google_service_account" "github_app_sa" {
   display_name = "GitHub App Webhook Service Account"
 }
 
+# Service Account for Cloud Run Runtime
+resource "google_service_account" "cloud_run_runtime" {
+  account_id   = "sentinel-runtime"
+  display_name = "Sentinel Cloud Run Runtime SA"
+}
+
+# Grant Cloud Trace Agent to the runtime SA
+resource "google_project_iam_member" "cloud_run_runtime_trace" {
+  project = var.project_id
+  role    = "roles/cloudtrace.agent"
+  member  = "serviceAccount:${google_service_account.cloud_run_runtime.email}"
+}
+
 # Pub/Sub topic for GitHub Webhook events
 resource "google_pubsub_topic" "github_webhooks" {
   name = "github-webhook-events"
@@ -63,7 +78,7 @@ resource "google_pubsub_subscription" "orchestrator_push" {
 
   push_config {
     push_endpoint = "${google_cloud_run_v2_service.orchestrator.uri}/api/github/webhooks"
-    
+
     oidc_token {
       service_account_email = google_service_account.github_app_sa.email
     }
@@ -81,7 +96,7 @@ resource "google_iam_workload_identity_pool_provider" "github_actions" {
   workload_identity_pool_id          = google_iam_workload_identity_pool.github_actions.workload_identity_pool_id
   workload_identity_pool_provider_id = "github-actions-provider"
   display_name                       = "GitHub Actions Provider"
-  
+
   attribute_mapping = {
     "google.subject"       = "assertion.sub"
     "attribute.actor"      = "assertion.actor"
@@ -89,7 +104,7 @@ resource "google_iam_workload_identity_pool_provider" "github_actions" {
   }
 
   attribute_condition = "assertion.repository == '${var.github_repository}'"
-  
+
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
   }

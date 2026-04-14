@@ -26,9 +26,14 @@ EVALUATOR_URL = os.getenv("EVALUATOR_URL")
 # Global history for Copilot Extension lookup
 SENTINEL_HISTORY = {} 
 
+import langchain
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("sentinel")
 
+# Enable global LangChain logging for auditable AI traces
+langchain.debug = True
+langchain.verbose = True
 # ---------------------------------------------------------------------------
 # App lifecycle – build the graph once at startup
 # ---------------------------------------------------------------------------
@@ -70,6 +75,9 @@ app = FastAPI(
     description="Multi-agent compliance engine for pull requests",
     lifespan=lifespan,
 )
+
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+FastAPIInstrumentor.instrument_app(app)
 
 # ---------------------------------------------------------------------------
 # Helpers
