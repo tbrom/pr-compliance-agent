@@ -1,33 +1,45 @@
-import os
-from github import Github, Auth, GithubIntegration
-from .state import SentinelState
-
-from .state import SentinelState
+import logging
 import httpx
 
-def scout_node(state: SentinelState) -> dict:
-    pr_id = state["pr_id"]
-    repo_name = state["repo_name"]
-    diff_url = state.get("diff_content", "") # This might be the raw URL if passed from main
+from .state import SentinelState
 
-    logger_info = f"🔍 Scout: Fetching diff for PR #{pr_id} on {repo_name}"
-    
-    # If main.py already passed the diff_url, we fetch it
-    if diff_url.startswith("http"):
+logger = logging.getLogger("sentinel")
+
+
+async def scout_node(state: SentinelState) -> dict:
+    pr_id = state.get("pr_id")
+    repo_name = state.get("repo_name")
+    diff_ref = state.get("diff_content", "")
+    github_token = state.get("github_token", "")
+
+    logger.info("🔍 Scout: Fetching diff for PR #%s on %s", pr_id, repo_name)
+
+    if diff_ref.startswith("http"):
+        headers = {
+            "Accept": "application/vnd.github.v3.diff",
+            "User-Agent": "sentinel-sdlc",
+        }
+        # Authenticated fetch works for private repos; public repos also accept the token.
+        if github_token:
+            headers["Authorization"] = f"Bearer {github_token}"
+
         try:
-            # Note: We assume the caller or middleware handled the redirection/auth if needed
-            # for the diff_url, or we fetch it via the public URL if it's a public repo.
-            # In production, we'd use the installation token passed in the state.
-            response = httpx.get(diff_url, follow_redirects=True, timeout=10.0)
+            response = httpx.get(diff_ref, headers=headers, follow_redirects=True, timeout=10.0)
+            response.raise_for_status()
             diff_text = response.text
+        except httpx.HTTPStatusError as e:
+            logger.error("❌ Scout: diff fetch returned %s for %s", e.response.status_code, diff_ref)
+            diff_text = f"Error fetching diff: HTTP {e.response.status_code}"
         except Exception as e:
+            logger.error("❌ Scout: diff fetch failed: %s", e)
             diff_text = f"Error fetching diff: {str(e)}"
     else:
-        # Fallback – if the diff_content was already the text
-        diff_text = diff_url
+        # Fallback — diff_content was already the text (push events, tests, etc.)
+        diff_text = diff_ref
 
     return {
         "diff_content": diff_text,
-        "jira_context": {"ticket_id": "STNL-123", "description": "Derived from PR context"},
-        "comments": state.get("comments", []) + [f"Scout: Processed PR diff ({len(diff_text)} chars)."]
+        "comments": state.get("comments", []) + [
+            f"Scout: Processed PR diff ({len(diff_text)} chars)."
+        ],
     }

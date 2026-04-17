@@ -1,12 +1,20 @@
+import os
 import sys
 import asyncio
 from mcp.server.stdio import stdio_server
 from mcp.server import Server
 from mcp.types import Tool, TextContent
+
+# Ensure the server directory is on sys.path so `knowledge_base` imports work
+# regardless of the CWD the server is spawned from.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
 from knowledge_base import KnowledgeBase
 
-kb = KnowledgeBase()
-kb.load_rules_from_md("standards.md")
+kb = KnowledgeBase(db_path=os.path.join(_HERE, "chroma_db"))
+kb.load_rules_from_md(os.path.join(_HERE, "standards.md"))
 
 server = Server("sentinel-standards-mcp")
 

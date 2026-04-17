@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 from github import GithubIntegration, Github, Auth
 
 from graph import build_sentinel_graph
+from history_store import build_store
+from mcp_client import SentinelMCPClient, set_client
 from telemetry import setup_telemetry
 
 # ---------------------------------------------------------------------------
@@ -22,9 +24,6 @@ GITHUB_PRIVATE_KEY = os.getenv("GITHUB_PRIVATE_KEY")
 GITHUB_PRIVATE_KEY_PATH = os.getenv("GITHUB_PRIVATE_KEY_PATH", "private-key.pem")
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET")
 EVALUATOR_URL = os.getenv("EVALUATOR_URL")
-
-# Global history for Copilot Extension lookup
-SENTINEL_HISTORY = {} 
 
 import langchain
 
@@ -65,9 +64,33 @@ async def lifespan(app: FastAPI):
     setup_telemetry()
     logger.info("✅ OpenTelemetry tracing initialised")
 
+    # Boot long-lived MCP client (spawns Jira + Standards MCP subprocesses)
+    mcp_client = SentinelMCPClient()
+    try:
+        await mcp_client.start()
+        set_client(mcp_client)
+        app.state.mcp_client = mcp_client
+    except Exception as e:
+        logger.error("❌ MCP client failed to start: %s", e)
+        app.state.mcp_client = None
+
+    # Persistent verdict history (used by the Copilot chat endpoint)
+    app.state.history = build_store()
+
     yield  # application runs
 
     logger.info("🛑 Sentinel shutting down")
+    if getattr(app.state, "mcp_client", None) is not None:
+        try:
+            await app.state.mcp_client.stop()
+        except Exception as e:
+            logger.warning("MCP client shutdown error: %s", e)
+    history = getattr(app.state, "history", None)
+    if history is not None and hasattr(history, "close"):
+        try:
+            history.close()
+        except Exception as e:
+            logger.warning("History store shutdown error: %s", e)
 
 
 app = FastAPI(
@@ -114,39 +137,71 @@ def post_pr_comment(gh: Github, repo_full_name: str, pr_number: int, body: str):
     logger.info("💬 Posted comment on %s#%d", repo_full_name, pr_number)
 
 
+_DECISION_EMOJI = {"GO": "✅", "WARN": "⚠️", "NO-GO": "🚫"}
+
+
 def format_report(state: dict) -> str:
     """Format the final agent state into a Markdown PR comment."""
     decision = state.get("final_decision", "UNKNOWN")
-    emoji = "✅" if decision == "GO" else "🚫"
+    emoji = _DECISION_EMOJI.get(decision, "❔")
 
-    lines = [
-        f"## {emoji} Sentinel-SDLC Verdict: **{decision}**",
-        "",
-        "### Agent Trace",
-    ]
+    lines = [f"## {emoji} Sentinel-SDLC Verdict: **{decision}**", ""]
 
-    for comment in state.get("comments", []):
-        lines.append(f"- {comment}")
+    blocking = state.get("blocking_issues", [])
+    if blocking:
+        lines.append("### 🚫 Blocking Issues")
+        for b in blocking:
+            lines.append(f"- {b}")
+        lines.append("")
+
+    warnings = state.get("warnings", [])
+    if warnings:
+        lines.append("### ⚠️ Warnings")
+        for w in warnings:
+            lines.append(f"- {w}")
+        lines.append("")
+
+    reasoning = state.get("decision_reasoning", [])
+    if reasoning:
+        lines.append("### Decision Rationale")
+        for r in reasoning:
+            lines.append(f"- {r}")
+        lines.append("")
 
     findings = state.get("analyst_findings", [])
     if findings:
-        lines.append("")
         lines.append("### Analyst Findings")
         for f in findings:
             lines.append(f"- {f}")
+        lines.append("")
 
     signals = state.get("validator_signals", [])
     if signals:
-        lines.append("")
-        lines.append("### Validator Signals")
+        lines.append("### Raw Signals")
         for s in signals:
             lines.append(f"- `{s}`")
+        lines.append("")
+
+    lines.append("### Agent Trace")
+    for comment in state.get("comments", []):
+        lines.append(f"- {comment}")
 
     lines.append("")
     lines.append("---")
     lines.append("*Powered by Sentinel-SDLC • Multi-Agent Compliance Engine*")
 
     return "\n".join(lines)
+
+
+def get_user_role(login: str) -> str:
+    """
+    Map a GitHub login to a Sentinel Role.
+    In production, this would query a DB or an IDP.
+    """
+    admins = os.getenv("SENTINEL_ADMIN_LOGINS", "").split(",")
+    if login in admins:
+        return "ADMIN"
+    return "DEVELOPER"
 
 
 # ---------------------------------------------------------------------------
@@ -181,6 +236,8 @@ async def github_webhook(request: Request):
         if action not in ("opened", "synchronize", "reopened"):
             return JSONResponse(status_code=200, content={"status": "ignored", "action": action})
 
+        requester_login = payload.get("sender", {}).get("login", "unknown")
+
         pr = payload["pull_request"]
         pr_number = pr["number"]
         repo_full_name = payload["repository"]["full_name"]
@@ -209,9 +266,14 @@ async def github_webhook(request: Request):
     else:
         return JSONResponse(status_code=200, content={"status": "ignored", "event": event})
 
-    # 4. Create an initial in-progress Check Run
+    user_role = get_user_role(requester_login)
+    logger.info("👤 Requester: %s (Role: %s)", requester_login, user_role)
+
+    # 4. Create an initial in-progress Check Run and mint an installation token
+    #    so agents (Scout) can authenticate diff fetches for private repos.
     integration = request.app.state.github_integration
     check_run_id = None
+    installation_token = ""
     if integration and installation_id:
         try:
             gh = get_github_client(integration, installation_id)
@@ -226,6 +288,11 @@ async def github_webhook(request: Request):
         except Exception as e:
             logger.error("❌ Failed to create Check Run: %s", str(e))
 
+        try:
+            installation_token = integration.get_access_token(installation_id).token
+        except Exception as e:
+            logger.warning("⚠️  Could not mint installation access token: %s", e)
+
     # 5. Run the multi-agent LangGraph pipeline
     initial_state = {
         "pr_id": pr_number,
@@ -233,17 +300,23 @@ async def github_webhook(request: Request):
         "branch_name": branch_name,
         "jira_id": "",
         "installation_id": installation_id,
+        "github_token": installation_token,
         "diff_content": diff_url,
         "jira_context": None,
         "analyst_findings": [],
         "validator_signals": [],
         "final_decision": "",
+        "decision_reasoning": [],
+        "blocking_issues": [],
+        "warnings": [],
+        "requester_login": requester_login,
+        "user_role": user_role,
         "comments": [],
         "error": "",
     }
 
     try:
-        final_state = request.app.state.sentinel_graph.invoke(initial_state)
+        final_state = await request.app.state.sentinel_graph.ainvoke(initial_state)
         logger.info("✅ Graph completed for PR #%d – decision: %s",
                     pr_number, final_state.get("final_decision"))
     except Exception as e:
@@ -267,13 +340,21 @@ async def github_webhook(request: Request):
 
             if check_run_id:
                 decision = final_state.get("final_decision", "UNKNOWN")
-                conclusion = "success" if decision == "GO" else "failure"
-                
+                conclusion = {
+                    "GO": "success",
+                    "WARN": "neutral",
+                    "NO-GO": "failure",
+                }.get(decision, "failure")
+
                 # Construct detailed output summary
                 summary_lines = [f"### Verdict: **{decision}**", ""]
-                for comment in final_state.get("comments", []):
-                    summary_lines.append(f"- {comment}")
-                
+                for item in final_state.get("blocking_issues", []):
+                    summary_lines.append(f"- 🚫 {item}")
+                for item in final_state.get("warnings", []):
+                    summary_lines.append(f"- ⚠️ {item}")
+                for item in final_state.get("decision_reasoning", []):
+                    summary_lines.append(f"- {item}")
+
                 repo.get_check_run(check_run_id).edit(
                     status="completed",
                     conclusion=conclusion,
@@ -285,12 +366,24 @@ async def github_webhook(request: Request):
                 )
                 logger.info("✅ Updated Check Run ID: %s with conclusion: %s", check_run_id, conclusion)
 
-            # Store result in HISTORY for Copilot lookup
-            SENTINEL_HISTORY[f"{repo_full_name}#{pr_number}"] = {
-                "decision": final_state.get("final_decision", "UNKNOWN"),
-                "findings": final_state.get("analyst_findings", []),
-                "signals": final_state.get("validator_signals", []),
-            }
+            # Persist verdict for the Copilot chat endpoint to recall later.
+            try:
+                request.app.state.history.put(
+                    repo_full_name,
+                    pr_number,
+                    {
+                        "decision": final_state.get("final_decision", "UNKNOWN"),
+                        "findings": final_state.get("analyst_findings", []),
+                        "signals": final_state.get("validator_signals", []),
+                        "blocking_issues": final_state.get("blocking_issues", []),
+                        "warnings": final_state.get("warnings", []),
+                        "decision_reasoning": final_state.get("decision_reasoning", []),
+                        "requester_login": final_state.get("requester_login"),
+                        "jira_id": final_state.get("jira_id"),
+                    },
+                )
+            except Exception as e:
+                logger.error("❌ Failed to persist verdict for %s#%d: %s", repo_full_name, pr_number, e)
 
         except Exception as e:
             logger.error("❌ Failed to post result back to GitHub: %s", str(e), exc_info=True)
@@ -321,16 +414,25 @@ async def copilot_chat(request: Request):
         payload = await request.json()
         messages = payload.get("messages", [])
         last_message = messages[-1]["content"] if messages else "Hello"
-        
-        # 2. Identify the context (e.g., current PR from payload)
-        # GitHub sends repository and PR context in the request payload
-        repo_name = payload.get("repository", {}).get("full_name", "unknown")
-        # For simplicity, we'll try to find the last PR result for this repo
-        # In production, we'd lookup by specific PR ID from the payload
-        history_key = next((k for k in SENTINEL_HISTORY.keys() if k.startswith(repo_name)), None)
-        pr_context = SENTINEL_HISTORY.get(history_key, {"decision": "No recent scan found."})
 
-        # 3. Handle the chat logic
+        # Identity
+        requester_login = payload.get("sender", {}).get("login", "unknown")
+        user_role = get_user_role(requester_login)
+        logger.info("👤 Copilot Requester: %s (Role: %s)", requester_login, user_role)
+
+        # Resolve PR context: prefer an explicit PR reference in the Copilot
+        # payload, fall back to the latest verdict for the repo in scope.
+        repo_name, pr_number = _extract_pr_reference(payload, messages)
+        history = request.app.state.history
+
+        pr_context = None
+        if repo_name and pr_number is not None:
+            pr_context = history.get(repo_name, pr_number)
+        if pr_context is None and repo_name:
+            pr_context = history.get_latest(repo_name)
+        if pr_context is None:
+            pr_context = {"decision": "No recent scan found."}
+
         response_text = handle_copilot_chat(last_message, pr_context)
 
         return JSONResponse(status_code=200, content={
@@ -340,6 +442,34 @@ async def copilot_chat(request: Request):
     except Exception as e:
         logger.error("❌ Copilot Chat Error: %s", str(e), exc_info=True)
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+def _extract_pr_reference(payload: dict, messages: list) -> tuple[str | None, int | None]:
+    """Best-effort extraction of (repo_full_name, pr_number) from a Copilot payload.
+
+    GitHub Copilot Extensions attach attachments as `copilot_references` on the
+    most recent message. A pull-request reference has:
+        { "type": "github.pull-request",
+          "data": { "number": <int>, "repository": { "full_name": "owner/repo" } } }
+
+    If no explicit reference is present we fall back to the top-level
+    `repository.full_name` field (if any), leaving pr_number as None so the
+    caller can resolve the latest verdict for the repo.
+    """
+    repo_name: str | None = None
+    pr_number: int | None = None
+
+    if messages:
+        for ref in messages[-1].get("copilot_references", []) or []:
+            if ref.get("type") in ("github.pull-request", "github.pull_request"):
+                data = ref.get("data") or {}
+                num = data.get("number")
+                repo = (data.get("repository") or {}).get("full_name")
+                if num is not None and repo:
+                    return repo, int(num)
+
+    repo_name = payload.get("repository", {}).get("full_name") or None
+    return repo_name, pr_number
 
 
 if __name__ == "__main__":

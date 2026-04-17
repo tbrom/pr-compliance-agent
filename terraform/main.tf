@@ -11,12 +11,24 @@ resource "google_cloud_run_v2_service" "orchestrator" {
   deletion_protection = false
 
   template {
-    service_account = google_service_account.cloud_run_runtime.email
+    service_account = google_service_account.orchestrator_sa.email
     containers {
       image = "us-docker.pkg.dev/cloudrun/container/hello"
       env {
         name  = "ENVIRONMENT"
         value = "production"
+      }
+      env {
+        name  = "GOOGLE_CLOUD_PROJECT"
+        value = var.project_id
+      }
+      env {
+        name  = "SENTINEL_HISTORY_BACKEND"
+        value = "firestore"
+      }
+      env {
+        name  = "SENTINEL_FIRESTORE_DATABASE"
+        value = google_firestore_database.sentinel.name
       }
     }
   }
@@ -34,7 +46,7 @@ resource "google_cloud_run_v2_service" "evaluator" {
   deletion_protection = false
 
   template {
-    service_account = google_service_account.cloud_run_runtime.email
+    service_account = google_service_account.evaluator_sa.email
     containers {
       image = "us-docker.pkg.dev/cloudrun/container/hello"
     }
@@ -53,17 +65,31 @@ resource "google_service_account" "github_app_sa" {
   display_name = "GitHub App Webhook Service Account"
 }
 
-# Service Account for Cloud Run Runtime
-resource "google_service_account" "cloud_run_runtime" {
-  account_id   = "sentinel-runtime"
-  display_name = "Sentinel Cloud Run Runtime SA"
+# Service Account for Orchestrator
+resource "google_service_account" "orchestrator_sa" {
+  account_id   = "sentinel-orchestrator"
+  display_name = "Sentinel Orchestrator SA"
 }
 
-# Grant Cloud Trace Agent to the runtime SA
-resource "google_project_iam_member" "cloud_run_runtime_trace" {
+# Service Account for Evaluator
+resource "google_service_account" "evaluator_sa" {
+  account_id   = "sentinel-evaluator"
+  display_name = "Sentinel Evaluator SA"
+}
+
+# Allow Orchestrator to invoke the Evaluator
+resource "google_cloud_run_v2_service_iam_member" "orchestrator_invokes_evaluator" {
+  location = var.region
+  name     = google_cloud_run_v2_service.evaluator.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.orchestrator_sa.email}"
+}
+
+# Grant Cloud Trace Agent to the orchestrator SA
+resource "google_project_iam_member" "orchestrator_trace" {
   project = var.project_id
   role    = "roles/cloudtrace.agent"
-  member  = "serviceAccount:${google_service_account.cloud_run_runtime.email}"
+  member  = "serviceAccount:${google_service_account.orchestrator_sa.email}"
 }
 
 # Pub/Sub topic for GitHub Webhook events
@@ -149,4 +175,49 @@ resource "google_artifact_registry_repository" "sentinel_repo" {
   repository_id = "sentinel-repo"
   description   = "Docker repository for Sentinel-SDLC agents"
   format        = "DOCKER"
+}
+
+# ---------------------------------------------------------------------------
+# Firestore — persistent verdict history (Copilot context)
+# ---------------------------------------------------------------------------
+# Named database ("sentinel") rather than "(default)" so per-environment
+# databases in a shared project remain possible later.
+resource "google_firestore_database" "sentinel" {
+  project                     = var.project_id
+  name                        = "sentinel"
+  location_id                 = var.region
+  type                        = "FIRESTORE_NATIVE"
+  concurrency_mode            = "OPTIMISTIC"
+  app_engine_integration_mode = "DISABLED"
+
+  # Firestore databases cannot be recreated safely — guard against accidental destroy.
+  deletion_policy = "ABANDON"
+}
+
+# Composite index that backs get_latest(repo): WHERE repo == X ORDER BY updated_at DESC
+resource "google_firestore_index" "history_repo_updated" {
+  project    = var.project_id
+  database   = google_firestore_database.sentinel.name
+  collection = "sentinel_history"
+
+  fields {
+    field_path = "repo"
+    order      = "ASCENDING"
+  }
+  fields {
+    field_path = "updated_at"
+    order      = "DESCENDING"
+  }
+  fields {
+    field_path = "__name__"
+    order      = "DESCENDING"
+  }
+}
+
+# Grant the orchestrator Cloud Run service access to Firestore. datastore.user
+# allows read/write on both Firestore Native and Datastore mode databases.
+resource "google_project_iam_member" "orchestrator_firestore" {
+  project = var.project_id
+  role    = "roles/datastore.user"
+  member  = "serviceAccount:${google_service_account.orchestrator_sa.email}"
 }
